@@ -8,7 +8,6 @@ Runs on stdio transport for compatibility with Cursor, Claude Code, Windsurf.
 
 from __future__ import annotations
 
-import contextvars
 import json
 import logging
 import os
@@ -44,15 +43,23 @@ server = Server(
 
 # ── In-session memory ─────────────────────────────────────────────────────────
 # Facts the AI stores during the current session. Under stdio (one process =
-# one conversation) all calls share the default bucket. Under streamable-HTTP
-# (one process = many concurrent clients) the ASGI wrapper sets the session id
-# from the `mcp-session-id` header so each client gets its own bucket.
-_session_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("gladekit_session_id", default="_stdio")
+# one conversation) there's a single ServerSession. Under streamable-HTTP each
+# mcp-session-id gets its own ServerSession, so using id(session) as the key
+# scopes state per client without reaching into the transport internals.
 _session_memory: dict[str, list[str]] = {}
 
 
+def _current_session_id() -> str:
+    """Return a stable per-client key. Falls back to "_stdio" outside a request."""
+    try:
+        ctx = server.request_context
+    except LookupError:
+        return "_stdio"
+    return f"mcp-{id(ctx.session)}"
+
+
 def _current_session_memory() -> list[str]:
-    return _session_memory.setdefault(_session_id_var.get(), [])
+    return _session_memory.setdefault(_current_session_id(), [])
 
 
 # ── Meta-tools ────────────────────────────────────────────────────────────────
@@ -199,7 +206,7 @@ async def call_tool(
         # cheaply short-circuits the common case so we don't pay for a bridge
         # health check on every call.
         if message:
-            sid = _session_id_var.get()
+            sid = _current_session_id()
             skill.record_message(message, session_id=sid)
             if skill.should_persist_now(session_id=sid):
                 try:
@@ -579,28 +586,17 @@ def build_http_app(
     )
 
     class _MCPAsgiApp:
-        """ASGI wrapper so Starlette routes the request as-is (not via request_response).
-
-        Also binds the per-request session id to a ContextVar so server-side
-        state (session memory, skill messages) is scoped to the caller rather
-        than shared across all HTTP clients.
+        """Pass-through ASGI wrapper so Starlette routes it as an ASGI app
+        (accepting all methods) rather than a GET-only view function. Per-client
+        state is keyed off the MCP ServerSession identity via _current_session_id()
+        at handler time, so we don't need to inspect headers here.
         """
 
         def __init__(self, manager):
             self._manager = manager
 
         async def __call__(self, scope, receive, send):
-            sid = "_http-init"
-            if scope.get("type") == "http":
-                for key, value in scope.get("headers") or []:
-                    if key == b"mcp-session-id":
-                        sid = value.decode("latin-1") or sid
-                        break
-            token = _session_id_var.set(sid)
-            try:
-                await self._manager.handle_request(scope, receive, send)
-            finally:
-                _session_id_var.reset(token)
+            await self._manager.handle_request(scope, receive, send)
 
     mcp_asgi = _MCPAsgiApp(session_manager)
 
