@@ -2,7 +2,7 @@
 Scene category tools — GameObject creation, hierarchy manipulation, transforms, components.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "scene",

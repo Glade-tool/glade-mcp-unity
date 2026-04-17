@@ -2,7 +2,7 @@
 Camera category tools — cameras, Cinemachine, render textures, post processing.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "camera",

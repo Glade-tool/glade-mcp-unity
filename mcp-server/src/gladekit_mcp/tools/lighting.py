@@ -2,7 +2,7 @@
 Lighting category tools — lights, render settings, quality, reflection probes.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "lighting",

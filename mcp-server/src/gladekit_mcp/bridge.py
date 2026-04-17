@@ -41,9 +41,7 @@ async def check_health(bridge_url: str = DEFAULT_BRIDGE_URL) -> dict:
             resp.raise_for_status()
             return resp.json()
     except Exception as exc:
-        raise UnityBridgeError(
-            f"Unity bridge not reachable at {bridge_url}: {exc}"
-        ) from exc
+        raise UnityBridgeError(f"Unity bridge not reachable at {bridge_url}: {exc}") from exc
 
 
 async def is_available(bridge_url: str = DEFAULT_BRIDGE_URL) -> bool:
@@ -91,9 +89,7 @@ async def execute_tool(
             }
         )
     except Exception as exc:
-        return json.dumps(
-            {"success": False, "message": f"Unity bridge error for {tool_name}: {exc}"}
-        )
+        return json.dumps({"success": False, "message": f"Unity bridge error for {tool_name}: {exc}"})
 
     if not data.get("success"):
         return json.dumps(

@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
 
 import pytest
 
+from gladekit_mcp.tools import get_unity_tool_schemas
 from gladekit_mcp.tools.registry import (
     CORE_TOOLS,
     _convert_openai_to_mcp,
     dispatch_tool_call,
     get_mcp_tools,
 )
-from gladekit_mcp.tools import get_unity_tool_schemas
-
 
 # ── Schema validation ────────────────────────────────────────────────────────
 
@@ -40,9 +38,7 @@ class TestSchemaValidation:
             assert params.get("type") == "object", (
                 f"Tool {func['name']} parameters.type must be 'object', got {params.get('type')}"
             )
-            assert "properties" in params, (
-                f"Tool {func['name']} parameters missing 'properties'"
-            )
+            assert "properties" in params, f"Tool {func['name']} parameters missing 'properties'"
 
     def test_no_duplicate_tool_names(self):
         """Tool names must be unique across all schemas.
@@ -56,14 +52,13 @@ class TestSchemaValidation:
         # Allow known duplicates (tracked for cleanup)
         known_duplicates = {"compile_scripts"}
         unexpected = set(duplicates) - known_duplicates
-        assert not unexpected, (
-            f"Unexpected duplicate tool names: {unexpected}"
-        )
+        assert not unexpected, f"Unexpected duplicate tool names: {unexpected}"
 
     def test_tool_names_are_snake_case(self):
         """All tool names must be snake_case (lowercase with underscores)."""
         schemas = get_unity_tool_schemas()
         import re
+
         snake_re = re.compile(r"^[a-z][a-z0-9_]*$")
         for schema in schemas:
             name = schema["function"]["name"]
@@ -91,16 +86,12 @@ class TestCoreToolSet:
         """get_mcp_tools must return only tools in CORE_TOOLS."""
         tools = get_mcp_tools()
         for tool in tools:
-            assert tool.name in CORE_TOOLS, (
-                f"Non-core tool '{tool.name}' in MCP tool list"
-            )
+            assert tool.name in CORE_TOOLS, f"Non-core tool '{tool.name}' in MCP tool list"
 
     def test_get_mcp_tools_count_within_budget(self):
         """Core tools must stay within Claude Code's ~128 tool budget."""
         tools = get_mcp_tools()
-        assert len(tools) <= 128, (
-            f"Too many core tools ({len(tools)}); Claude Code limit is ~128"
-        )
+        assert len(tools) <= 128, f"Too many core tools ({len(tools)}); Claude Code limit is ~128"
 
     def test_essential_tools_in_core(self):
         """Critical everyday tools must be in CORE_TOOLS."""
@@ -169,18 +160,14 @@ class TestArgSanitization:
     @pytest.mark.asyncio
     async def test_null_values_stripped(self, mock_bridge_success):
         """Null argument values should be stripped before dispatch."""
-        result = await dispatch_tool_call(
-            "create_game_object", {"name": "Cube", "parent": None}
-        )
+        result = await dispatch_tool_call("create_game_object", {"name": "Cube", "parent": None})
         data = json.loads(result)
         assert data["success"] is True
 
     @pytest.mark.asyncio
     async def test_numeric_values_coerced_to_string(self, mock_bridge_success):
         """Numeric values should be coerced to strings for Unity bridge."""
-        result = await dispatch_tool_call(
-            "set_transform", {"gameObjectName": "Cube", "x": 1.5, "y": 0}
-        )
+        result = await dispatch_tool_call("set_transform", {"gameObjectName": "Cube", "x": 1.5, "y": 0})
         data = json.loads(result)
         assert data["success"] is True
 
@@ -188,9 +175,7 @@ class TestArgSanitization:
     async def test_bool_values_preserved(self, mock_bridge_success):
         """Boolean values should NOT be coerced to strings."""
         # Booleans are isinstance(bool, int) → True, so the coercion must skip them
-        result = await dispatch_tool_call(
-            "set_game_object_active", {"gameObjectName": "Cube", "active": True}
-        )
+        result = await dispatch_tool_call("set_game_object_active", {"gameObjectName": "Cube", "active": True})
         data = json.loads(result)
         assert data["success"] is True
 

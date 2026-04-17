@@ -1,4 +1,5 @@
 """Console and JSON reporting for MCP eval results."""
+
 from __future__ import annotations
 
 import json
@@ -45,11 +46,7 @@ def print_result(r: MCPEvalResult, verbose: bool = False) -> None:
     print(f"  {icon} {_c(f'[{r.case_id}]', _DIM)} {prompt_preview}{quality_badge}")
 
     if verbose or not r.passed:
-        tools_str = (
-            _c(", ".join(r.tool_calls_made), _CYAN)
-            if r.tool_calls_made
-            else _c("(no tools called)", _DIM)
-        )
+        tools_str = _c(", ".join(r.tool_calls_made), _CYAN) if r.tool_calls_made else _c("(no tools called)", _DIM)
         print(f"       tools: {tools_str}")
         print(f"       {_c(f'{r.duration_seconds:.1f}s', _DIM)} | iter {r.total_iterations}")
 

@@ -2,7 +2,7 @@
 Prefabs category tools — prefab creation, instantiation, and hierarchy editing.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "prefabs",

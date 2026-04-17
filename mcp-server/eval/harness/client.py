@@ -10,13 +10,13 @@ Two modes:
 For AI-in-the-loop evals, use the AI client mode (--ai) which sends prompts
 to an LLM and observes what MCP tools it calls.
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import time
-from typing import Any, Optional
+from typing import Optional
 
 from eval.cases import MCPEvalCase, MCPEvalResult
 
@@ -65,9 +65,10 @@ async def run_case_direct(
     This tests the MCP server logic + bridge HTTP path without the stdio
     transport layer. For most eval purposes this is sufficient and fast.
     """
-    from gladekit_mcp.server import call_tool, list_tools
-    from gladekit_mcp import bridge as bridge_mod
     from unittest.mock import patch
+
+    from gladekit_mcp import bridge as bridge_mod
+    from gladekit_mcp.server import call_tool
 
     tool_calls_made: list[str] = []
     tool_calls_with_args: list[dict] = []
@@ -187,8 +188,14 @@ def _default_args_for_tool(tool_name: str, case: MCPEvalCase) -> dict:
         "remove_component": {"gameObjectName": "TestObject", "componentType": "BoxCollider"},
         "add_rigidbody": {"gameObjectName": "TestObject"},
         "create_collider": {"gameObjectName": "TestObject", "colliderType": "Box"},
-        "create_script": {"scriptName": "TestScript", "code": "using UnityEngine;\npublic class TestScript : MonoBehaviour { }"},
-        "modify_script": {"scriptName": "TestScript", "code": "using UnityEngine;\npublic class TestScript : MonoBehaviour { void Start() {} }"},
+        "create_script": {
+            "scriptName": "TestScript",
+            "code": "using UnityEngine;\npublic class TestScript : MonoBehaviour { }",
+        },
+        "modify_script": {
+            "scriptName": "TestScript",
+            "code": "using UnityEngine;\npublic class TestScript : MonoBehaviour { void Start() {} }",
+        },
         "get_scene_hierarchy": {},
         "get_gameobject_info": {"gameObjectName": "Player"},
         "find_game_objects": {"searchTerm": "Player"},
@@ -200,9 +207,20 @@ def _default_args_for_tool(tool_name: str, case: MCPEvalCase) -> dict:
         "instantiate_prefab": {"prefabPath": "Assets/Prefabs/Test.prefab"},
         "create_animator_controller": {"name": "TestAnimator"},
         "add_animator_state": {"controllerPath": "Assets/Animations/Test.controller", "stateName": "Idle"},
-        "add_animator_transition": {"controllerPath": "Assets/Animations/Test.controller", "sourceState": "Idle", "destinationState": "Run"},
-        "add_animator_parameters": {"controllerPath": "Assets/Animations/Test.controller", "parameterName": "Speed", "parameterType": "Float"},
-        "assign_animator_controller": {"gameObjectName": "TestObject", "controllerPath": "Assets/Animations/Test.controller"},
+        "add_animator_transition": {
+            "controllerPath": "Assets/Animations/Test.controller",
+            "sourceState": "Idle",
+            "destinationState": "Run",
+        },
+        "add_animator_parameters": {
+            "controllerPath": "Assets/Animations/Test.controller",
+            "parameterName": "Speed",
+            "parameterType": "Float",
+        },
+        "assign_animator_controller": {
+            "gameObjectName": "TestObject",
+            "controllerPath": "Assets/Animations/Test.controller",
+        },
         "create_canvas": {},
         "create_ui_element": {"elementType": "Button", "parentName": "Canvas"},
         "create_camera": {},
@@ -218,7 +236,11 @@ def _default_args_for_tool(tool_name: str, case: MCPEvalCase) -> dict:
         "set_render_settings": {"ambientIntensity": "1.0"},
         "create_character_controller": {"gameObjectName": "TestObject"},
         "change_material_shader": {"materialPath": "Assets/Materials/Test.mat", "shaderName": "Standard"},
-        "set_material_property": {"materialPath": "Assets/Materials/Test.mat", "propertyName": "_Color", "value": "1,0,0,1"},
+        "set_material_property": {
+            "materialPath": "Assets/Materials/Test.mat",
+            "propertyName": "_Color",
+            "value": "1,0,0,1",
+        },
         "compile_scripts": {},
         "get_unity_console_logs": {},
     }

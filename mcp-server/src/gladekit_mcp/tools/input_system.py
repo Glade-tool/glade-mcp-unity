@@ -2,7 +2,7 @@
 Input System category tools — new Input System, legacy Input Manager.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "input_system",
@@ -78,12 +78,8 @@ TOOLS: List[Dict] = [
                                                     "type": "object",
                                                     "properties": {
                                                         "path": {"type": "string"},
-                                                        "interactions": {
-                                                            "type": "string"
-                                                        },
-                                                        "processors": {
-                                                            "type": "string"
-                                                        },
+                                                        "interactions": {"type": "string"},
+                                                        "processors": {"type": "string"},
                                                         "groups": {"type": "string"},
                                                     },
                                                 },

@@ -2,7 +2,7 @@
 Profiler & debug category tools — Unity Profiler, frame timing, memory stats, frame debugger.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "profiler",

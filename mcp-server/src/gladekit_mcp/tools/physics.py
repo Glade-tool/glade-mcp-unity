@@ -2,7 +2,7 @@
 Physics category tools — colliders, rigidbodies, character controllers, physics materials.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "physics",

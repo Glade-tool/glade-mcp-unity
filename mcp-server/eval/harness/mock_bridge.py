@@ -11,13 +11,13 @@ Start with:
     ...
     server.shutdown()
 """
+
 from __future__ import annotations
 
 import json
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Optional
-
 
 # ── Default mock data ────────────────────────────────────────────────────────
 
@@ -172,12 +172,15 @@ class MockBridgeHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/api/health":
-            self._respond(200, {
-                "status": "ok",
-                "unityVersion": "6000.0.0f1",
-                "projectName": "EvalProject",
-                "projectPath": "/tmp/EvalProject",
-            })
+            self._respond(
+                200,
+                {
+                    "status": "ok",
+                    "unityVersion": "6000.0.0f1",
+                    "projectName": "EvalProject",
+                    "projectPath": "/tmp/EvalProject",
+                },
+            )
         elif self.path == "/api/compilation/status":
             self._respond(200, {"isCompiling": False, "compilationCount": 99})
         else:
@@ -195,21 +198,21 @@ class MockBridgeHandler(BaseHTTPRequestHandler):
             # Log the call for assertions
             self.__class__.tool_log.append({"name": tool_name, "args": args})
 
-            result = get_result_for(
-                tool_name, args, self.__class__.scene, self.__class__.tool_overrides
+            result = get_result_for(tool_name, args, self.__class__.scene, self.__class__.tool_overrides)
+            self._respond(
+                200,
+                {
+                    "success": True,
+                    "result": result,
+                    "requiresCompilation": tool_name in ("create_script", "modify_script"),
+                    "compilationCount": 99,
+                },
             )
-            self._respond(200, {
-                "success": True,
-                "result": result,
-                "requiresCompilation": tool_name in ("create_script", "modify_script"),
-                "compilationCount": 99,
-            })
 
         elif self.path == "/api/context/gather":
             ctx = {
                 "sceneHierarchy": [
-                    {"name": o["name"], "path": o["path"]}
-                    for o in self.__class__.scene.get("objects", [])
+                    {"name": o["name"], "path": o["path"]} for o in self.__class__.scene.get("objects", [])
                 ],
                 "scripts": [],
                 "selection": {},

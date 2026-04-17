@@ -2,7 +2,7 @@
 Materials category tools — materials, shaders, textures, sprites, model/audio import settings.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "materials",

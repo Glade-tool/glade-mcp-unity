@@ -9,14 +9,14 @@ unit-tested here. These tests verify:
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from gladekit_mcp.tools.scripting import TOOLS
 
-
 # ── Tool schema verification ──────────────────────────────────────────────────
+
 
 def _get_tool(name: str):
     for t in TOOLS:
@@ -45,40 +45,46 @@ def test_compile_scripts_description_no_parameters_required():
 # These are the JSON strings the C# CompileScriptsTool will return.
 # Verified here so the contract is documented and breakage is caught.
 
-BRIDGE_RESPONSE_IDLE_CLEAN = json.dumps({
-    "success": True,
-    "message": "Compilation complete. All script types are ready to use with add_component.",
-    "isCompiling": False,
-    "status": "idle",
-    "hasErrors": False,
-})
+BRIDGE_RESPONSE_IDLE_CLEAN = json.dumps(
+    {
+        "success": True,
+        "message": "Compilation complete. All script types are ready to use with add_component.",
+        "isCompiling": False,
+        "status": "idle",
+        "hasErrors": False,
+    }
+)
 
-BRIDGE_RESPONSE_IDLE_WITH_ERRORS = json.dumps({
-    "success": True,
-    "message": (
-        "Compilation finished with 2 error(s). Fix these errors before calling add_component or proceeding.\n\n"
-        "Error 1: Assets/Scripts/PlayerController.cs (line 42, col 15)\n"
-        "CS0246: The type or namespace name 'Rigidbody2D' could not be found\n\n"
-        "Source context:\n"
-        "    40:     [SerializeField] private float speed = 5f;\n"
-        "    41: \n"
-        ">>>  42:         Rigidbody2D rb = GetComponent<Rigidbody2D>();\n"
-        "    43:     }\n\n"
-        "Error 2: Assets/Scripts/PlayerController.cs (line 58, col 9)\n"
-        "CS1002: ; expected"
-    ),
-    "isCompiling": False,
-    "status": "idle",
-    "hasErrors": True,
-    "errorCount": 2,
-})
+BRIDGE_RESPONSE_IDLE_WITH_ERRORS = json.dumps(
+    {
+        "success": True,
+        "message": (
+            "Compilation finished with 2 error(s). Fix these errors before calling add_component or proceeding.\n\n"
+            "Error 1: Assets/Scripts/PlayerController.cs (line 42, col 15)\n"
+            "CS0246: The type or namespace name 'Rigidbody2D' could not be found\n\n"
+            "Source context:\n"
+            "    40:     [SerializeField] private float speed = 5f;\n"
+            "    41: \n"
+            ">>>  42:         Rigidbody2D rb = GetComponent<Rigidbody2D>();\n"
+            "    43:     }\n\n"
+            "Error 2: Assets/Scripts/PlayerController.cs (line 58, col 9)\n"
+            "CS1002: ; expected"
+        ),
+        "isCompiling": False,
+        "status": "idle",
+        "hasErrors": True,
+        "errorCount": 2,
+    }
+)
 
-BRIDGE_RESPONSE_STILL_COMPILING = json.dumps({
-    "success": True,
-    "message": "Unity is still compiling scripts. Call compile_scripts again to check when it finishes.",
-    "isCompiling": True,
-    "status": "compiling",
-})
+BRIDGE_RESPONSE_STILL_COMPILING = json.dumps(
+    {
+        "success": True,
+        "message": "Unity is still compiling scripts. Call compile_scripts again to check when it finishes.",
+        "isCompiling": True,
+        "status": "compiling",
+    }
+)
 
 
 @pytest.mark.asyncio
@@ -86,7 +92,9 @@ async def test_compile_scripts_dispatches_to_bridge():
     """compile_scripts tool call dispatches 'compile_scripts' with empty args to the bridge."""
     from gladekit_mcp import bridge as bridge_module
 
-    with patch.object(bridge_module, "execute_tool", new=AsyncMock(return_value=BRIDGE_RESPONSE_IDLE_CLEAN)) as mock_exec:
+    with patch.object(
+        bridge_module, "execute_tool", new=AsyncMock(return_value=BRIDGE_RESPONSE_IDLE_CLEAN)
+    ) as mock_exec:
         result = await bridge_module.execute_tool("compile_scripts", {})
         mock_exec.assert_called_once_with("compile_scripts", {})
 
@@ -124,6 +132,7 @@ async def test_compile_scripts_still_compiling_response():
 
 # ── Error message format contract ─────────────────────────────────────────────
 
+
 def test_error_response_format_contract():
     """
     Verify the expected shape of a compile_scripts error response.
@@ -144,11 +153,11 @@ def test_error_response_format_contract():
 
     # Message must contain enough info to fix the error
     msg = parsed["message"]
-    assert "error" in msg.lower()           # error count
-    assert "line" in msg.lower()            # line number
-    assert "Source context" in msg          # source code context
-    assert ">>>" in msg                     # error line marker
-    assert "CS" in msg                      # C# error code
+    assert "error" in msg.lower()  # error count
+    assert "line" in msg.lower()  # line number
+    assert "Source context" in msg  # source code context
+    assert ">>>" in msg  # error line marker
+    assert "CS" in msg  # C# error code
 
 
 def test_clean_response_format_contract():

@@ -3,7 +3,7 @@ Core category tools — always included in every request.
 Covers: user input, thinking, scene/console queries, compilation, save/open.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "core",

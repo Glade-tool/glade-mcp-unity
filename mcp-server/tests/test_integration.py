@@ -11,14 +11,13 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest.mock import patch
 
 import pytest
 
+from gladekit_mcp.bridge import UnityBridgeError, execute_tool, gather_scene_context
 from gladekit_mcp.server import call_tool
-from gladekit_mcp.bridge import execute_tool, gather_scene_context, UnityBridgeError
-
 
 # ── Mock Unity bridge HTTP server ────────────────────────────────────────────
 
@@ -31,17 +30,23 @@ class MockBridgeHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/api/health":
-            self._respond(200, {
-                "status": "ok",
-                "unityVersion": "6000.0.0f1",
-                "projectName": "TestProject",
-                "projectPath": "/tmp/TestProject",
-            })
+            self._respond(
+                200,
+                {
+                    "status": "ok",
+                    "unityVersion": "6000.0.0f1",
+                    "projectName": "TestProject",
+                    "projectPath": "/tmp/TestProject",
+                },
+            )
         elif self.path == "/api/compilation/status":
-            self._respond(200, {
-                "isCompiling": False,
-                "compilationCount": 5,
-            })
+            self._respond(
+                200,
+                {
+                    "isCompiling": False,
+                    "compilationCount": 5,
+                },
+            )
         else:
             self._respond(404, {"error": "Not found"})
 
@@ -52,28 +57,38 @@ class MockBridgeHandler(BaseHTTPRequestHandler):
         if self.path == "/api/tools/execute":
             tool_name = body.get("toolName", "")
             args = json.loads(body.get("arguments", "{}"))
-            result = json.dumps({
-                "success": True,
-                "message": f"{tool_name} executed",
-                **{k: v for k, v in args.items()},
-            })
-            self._respond(200, {
-                "success": True,
-                "result": result,
-                "requiresCompilation": tool_name in ("create_script", "modify_script"),
-            })
+            result = json.dumps(
+                {
+                    "success": True,
+                    "message": f"{tool_name} executed",
+                    **{k: v for k, v in args.items()},
+                }
+            )
+            self._respond(
+                200,
+                {
+                    "success": True,
+                    "result": result,
+                    "requiresCompilation": tool_name in ("create_script", "modify_script"),
+                },
+            )
         elif self.path == "/api/context/gather":
-            self._respond(200, {
-                "context": json.dumps({
-                    "sceneHierarchy": [
-                        {"name": "Main Camera", "path": "Main Camera"},
-                        {"name": "Player", "path": "Player"},
-                    ],
-                    "scripts": [
-                        {"name": "PlayerController", "path": "Assets/Scripts/PlayerController.cs"},
-                    ],
-                })
-            })
+            self._respond(
+                200,
+                {
+                    "context": json.dumps(
+                        {
+                            "sceneHierarchy": [
+                                {"name": "Main Camera", "path": "Main Camera"},
+                                {"name": "Player", "path": "Player"},
+                            ],
+                            "scripts": [
+                                {"name": "PlayerController", "path": "Assets/Scripts/PlayerController.cs"},
+                            ],
+                        }
+                    )
+                },
+            )
         else:
             self._respond(404, {"error": "Not found"})
 
@@ -160,6 +175,7 @@ class TestMCPToolDispatch:
         """call_tool for a Unity tool should dispatch through the bridge."""
         # Patch execute_tool to use our mock bridge URL
         from gladekit_mcp import bridge as bridge_mod
+
         original = bridge_mod.execute_tool
 
         async def _patched(name, args, bridge_url=None, **kwargs):
@@ -195,6 +211,7 @@ class TestCompilationWait:
     async def test_compilation_wait_returns_on_count_increment(self, mock_bridge_server):
         """_wait_for_compilation returns when compilationCount exceeds baseline."""
         from gladekit_mcp.bridge import _wait_for_compilation
+
         # Mock server returns compilationCount=5, baseline=4 → immediate return
         await asyncio.wait_for(
             _wait_for_compilation(mock_bridge_server, baseline_count=4),

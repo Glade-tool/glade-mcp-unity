@@ -2,7 +2,7 @@
 Terrain & NavMesh category tools — terrain creation, NavMesh baking, agents, obstacles, links.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "terrain_nav",

@@ -12,15 +12,14 @@ import json
 import logging
 import os
 
+from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp import types
 
-from . import bridge, cloud
-from .tools.registry import get_mcp_tools, dispatch_tool_call
-from .tools.task_filter import get_relevant_tool_summary
+from . import bridge, cloud, search, skill
 from .prompts import build_prompt_from_bridge
-from . import search, skill
+from .tools.registry import dispatch_tool_call, get_mcp_tools
+from .tools.task_filter import get_relevant_tool_summary
 
 logger = logging.getLogger("gladekit-mcp")
 
@@ -225,9 +224,7 @@ async def call_tool(
     # ── recall_session_memories ───────────────────────────────────────────────
     if name == "recall_session_memories":
         if not _session_memory:
-            return [
-                types.TextContent(type="text", text="No session memories stored yet.")
-            ]
+            return [types.TextContent(type="text", text="No session memories stored yet.")]
         items = "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(_session_memory))
         return [types.TextContent(type="text", text=f"Session memories:\n{items}")]
 
@@ -269,9 +266,9 @@ async def call_tool(
                 # Truncate very long results in the summary
                 if len(result_str) > 500:
                     result_str = result_str[:500] + "..."
-                lines.append(f"[{i+1}] {tool}: {status} — {result_str}")
+                lines.append(f"[{i + 1}] {tool}: {status} — {result_str}")
             else:
-                lines.append(f"[{i+1}] {tool}: {status} — {r.get('error', 'Unknown error')}")
+                lines.append(f"[{i + 1}] {tool}: {status} — {r.get('error', 'Unknown error')}")
 
         return [types.TextContent(type="text", text="\n".join(lines))]
 
@@ -285,16 +282,10 @@ async def call_tool(
             ctx = await bridge.gather_scene_context()
             scripts = ctx.get("scripts", [])
             if not scripts:
-                return [
-                    types.TextContent(
-                        type="text", text="No scripts found in Unity project."
-                    )
-                ]
+                return [types.TextContent(type="text", text="No scripts found in Unity project.")]
             results = await search.search_scripts(query, scripts, top_n=top_n)
             if not results:
-                return [
-                    types.TextContent(type="text", text="No matching scripts found.")
-                ]
+                return [types.TextContent(type="text", text="No matching scripts found.")]
             lines = [f"Top {len(results)} scripts for '{query}':\n"]
             for r in results:
                 sim = r.get("similarity")
@@ -304,11 +295,7 @@ async def call_tool(
                 lines.append("\nNote: Set OPENAI_API_KEY to enable semantic ranking.")
             return [types.TextContent(type="text", text="\n".join(lines))]
         except bridge.UnityBridgeError as e:
-            return [
-                types.TextContent(
-                    type="text", text=f"Could not reach Unity bridge: {e}"
-                )
-            ]
+            return [types.TextContent(type="text", text=f"Could not reach Unity bridge: {e}")]
 
     # ── Unity bridge tools ────────────────────────────────────────────────────
     result = await dispatch_tool_call(name, arguments)
@@ -414,9 +401,7 @@ async def read_resource(uri: str) -> str:
             health = await bridge.check_health()
             project_path = health.get("projectPath", "")
             if not project_path:
-                return (
-                    "GLADE.md not available: Unity bridge did not report project path."
-                )
+                return "GLADE.md not available: Unity bridge did not report project path."
             glade_path = os.path.join(project_path, "GLADE.md")
             if not os.path.exists(glade_path):
                 return "No GLADE.md found in project root. Create one to provide game design context."
@@ -504,24 +489,16 @@ async def get_prompt(name: str, arguments: dict | None = None) -> types.GetPromp
 
 async def run_server():
     """Run the MCP server on stdio transport."""
-    from . import __version__, cloud, search as search_mod
+    from . import __version__, cloud
+    from . import search as search_mod
 
     bridge_url = os.environ.get("UNITY_BRIDGE_URL", "http://localhost:8765")
-    search_status = (
-        "ENABLED"
-        if search_mod.is_available()
-        else "DISABLED (set OPENAI_API_KEY to enable)"
-    )
-    cloud_status = (
-        "ENABLED"
-        if cloud.is_available()
-        else "DISABLED (set GLADEKIT_API_KEY to enable)"
-    )
+    search_status = "ENABLED" if search_mod.is_available() else "DISABLED (set OPENAI_API_KEY to enable)"
+    cloud_status = "ENABLED" if cloud.is_available() else "DISABLED (set GLADEKIT_API_KEY to enable)"
     import sys
 
     print(
-        f"gladekit-mcp v{__version__} | bridge: {bridge_url} | "
-        f"search: {search_status} | cloud: {cloud_status}",
+        f"gladekit-mcp v{__version__} | bridge: {bridge_url} | search: {search_status} | cloud: {cloud_status}",
         file=sys.stderr,
     )
     async with stdio_server() as (read_stream, write_stream):

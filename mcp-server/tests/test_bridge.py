@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from gladekit_mcp.bridge import UnityBridgeError, check_health, execute_tool, execute_batch
+from gladekit_mcp.bridge import UnityBridgeError, check_health, execute_batch, execute_tool
 
 
 @pytest.mark.asyncio
@@ -88,9 +88,11 @@ async def test_execute_batch_connection_error_returns_error_list():
         mock_client.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
         mock_client_cls.return_value = mock_client
 
-        results = await execute_batch([
-            {"toolName": "create_game_object", "arguments": {"name": "Test"}},
-        ])
+        results = await execute_batch(
+            [
+                {"toolName": "create_game_object", "arguments": {"name": "Test"}},
+            ]
+        )
 
     assert len(results) == 1
     assert results[0]["success"] is False
@@ -101,13 +103,25 @@ async def test_execute_batch_connection_error_returns_error_list():
 async def test_execute_batch_success():
     """Successful batch returns per-call results."""
     mock_response = MagicMock()
-    mock_response.json = MagicMock(return_value={
-        "success": True,
-        "results": [
-            {"toolName": "create_game_object", "success": True, "result": '{"success":true}', "requiresCompilation": False},
-            {"toolName": "set_transform", "success": True, "result": '{"success":true}', "requiresCompilation": False},
-        ],
-    })
+    mock_response.json = MagicMock(
+        return_value={
+            "success": True,
+            "results": [
+                {
+                    "toolName": "create_game_object",
+                    "success": True,
+                    "result": '{"success":true}',
+                    "requiresCompilation": False,
+                },
+                {
+                    "toolName": "set_transform",
+                    "success": True,
+                    "result": '{"success":true}',
+                    "requiresCompilation": False,
+                },
+            ],
+        }
+    )
 
     with patch("gladekit_mcp.bridge.httpx.AsyncClient") as mock_client_cls:
         mock_client = AsyncMock()
@@ -116,10 +130,12 @@ async def test_execute_batch_success():
         mock_client.post = AsyncMock(return_value=mock_response)
         mock_client_cls.return_value = mock_client
 
-        results = await execute_batch([
-            {"toolName": "create_game_object", "arguments": {"name": "Cube"}},
-            {"toolName": "set_transform", "arguments": {"gameObjectPath": "Cube"}},
-        ])
+        results = await execute_batch(
+            [
+                {"toolName": "create_game_object", "arguments": {"name": "Cube"}},
+                {"toolName": "set_transform", "arguments": {"gameObjectPath": "Cube"}},
+            ]
+        )
 
     assert len(results) == 2
     assert results[0]["success"] is True

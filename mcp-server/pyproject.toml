@@ -46,3 +46,4 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
+ignore = ["E501"]  # long lines are unavoidable in tool-description strings

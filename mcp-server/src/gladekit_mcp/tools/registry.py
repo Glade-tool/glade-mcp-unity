@@ -29,8 +29,8 @@ from typing import Any
 
 from mcp import types
 
-from . import get_unity_tool_schemas
 from .. import bridge
+from . import get_unity_tool_schemas
 
 logger = logging.getLogger("gladekit-mcp")
 
@@ -167,10 +167,7 @@ def get_mcp_tools() -> list[types.Tool]:
         all_tools = [_convert_openai_to_mcp(s) for s in openai_schemas]
         _all_tool_names = {t.name for t in all_tools}
         _mcp_tools = [t for t in all_tools if t.name in CORE_TOOLS]
-        logger.info(
-            f"Registered {len(_mcp_tools)} core tools "
-            f"({len(_all_tool_names)} total available via bridge)"
-        )
+        logger.info(f"Registered {len(_mcp_tools)} core tools ({len(_all_tool_names)} total available via bridge)")
     return _mcp_tools
 
 

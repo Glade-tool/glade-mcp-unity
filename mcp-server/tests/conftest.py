@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -59,6 +59,7 @@ def mock_bridge_context():
 def reset_session_memory():
     """Clear session memory between tests."""
     from gladekit_mcp import server
+
     server._session_memory.clear()
     yield
     server._session_memory.clear()

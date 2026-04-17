@@ -23,7 +23,7 @@ Design:
 import re
 from typing import Dict, List, Set
 
-from . import get_unity_tool_schemas, get_tools_for_categories
+from . import get_tools_for_categories, get_unity_tool_schemas
 
 ALWAYS_INCLUDED: Set[str] = {"core", "scene", "scripting"}
 
@@ -178,8 +178,7 @@ _CATEGORY_KEYWORDS: Dict[str, List[str]] = {
 }
 
 _COMPILED_KEYWORDS: Dict[str, List[re.Pattern]] = {
-    cat: [re.compile(p, re.IGNORECASE) for p in patterns]
-    for cat, patterns in _CATEGORY_KEYWORDS.items()
+    cat: [re.compile(p, re.IGNORECASE) for p in patterns] for cat, patterns in _CATEGORY_KEYWORDS.items()
 }
 
 

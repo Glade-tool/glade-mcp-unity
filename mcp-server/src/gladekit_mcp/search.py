@@ -98,9 +98,7 @@ async def search_scripts(
             content_hashes.append(_hash_content(text))
 
         # Batch embed any scripts not already cached
-        uncached_indices = [
-            i for i, h in enumerate(content_hashes) if h not in _embedding_cache
-        ]
+        uncached_indices = [i for i, h in enumerate(content_hashes) if h not in _embedding_cache]
         if uncached_indices:
             uncached_texts = [script_texts[i] for i in uncached_indices]
             new_embeddings = await _embed_batch(uncached_texts)
@@ -116,11 +114,7 @@ async def search_scripts(
         scored: list[dict[str, Any]] = []
         for i, script in enumerate(scripts):
             cached_vec = _embedding_cache.get(content_hashes[i])
-            sim = (
-                _cosine_similarity(query_vec, cached_vec)
-                if cached_vec is not None
-                else 0.0
-            )
+            sim = _cosine_similarity(query_vec, cached_vec) if cached_vec is not None else 0.0
             scored.append({**script, "similarity": round(sim, 4)})
 
         scored.sort(key=lambda x: x["similarity"], reverse=True)

@@ -9,7 +9,6 @@ import pytest
 
 from gladekit_mcp.server import call_tool
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -50,12 +49,15 @@ class TestBatchExecute:
             _success_result("set_transform"),
         ]
         with patch("gladekit_mcp.bridge.execute_batch", new=AsyncMock(return_value=mock_results)):
-            result = await call_tool("batch_execute", {
-                "calls": [
-                    {"toolName": "create_game_object", "arguments": {"name": "Cube"}},
-                    {"toolName": "set_transform", "arguments": {"gameObjectPath": "Cube", "positionX": "1"}},
-                ]
-            })
+            result = await call_tool(
+                "batch_execute",
+                {
+                    "calls": [
+                        {"toolName": "create_game_object", "arguments": {"name": "Cube"}},
+                        {"toolName": "set_transform", "arguments": {"gameObjectPath": "Cube", "positionX": "1"}},
+                    ]
+                },
+            )
 
         text = result[0].text
         assert "2 tool(s)" in text
@@ -71,13 +73,16 @@ class TestBatchExecute:
             _success_result("create_material"),
         ]
         with patch("gladekit_mcp.bridge.execute_batch", new=AsyncMock(return_value=mock_results)):
-            result = await call_tool("batch_execute", {
-                "calls": [
-                    {"toolName": "create_game_object", "arguments": {"name": "Cube"}},
-                    {"toolName": "set_transform", "arguments": {"gameObjectPath": "Missing"}},
-                    {"toolName": "create_material", "arguments": {"name": "Red"}},
-                ]
-            })
+            result = await call_tool(
+                "batch_execute",
+                {
+                    "calls": [
+                        {"toolName": "create_game_object", "arguments": {"name": "Cube"}},
+                        {"toolName": "set_transform", "arguments": {"gameObjectPath": "Missing"}},
+                        {"toolName": "create_material", "arguments": {"name": "Red"}},
+                    ]
+                },
+            )
 
         text = result[0].text
         assert "[1] create_game_object: OK" in text
@@ -105,9 +110,9 @@ class TestBatchExecute:
             "gladekit_mcp.bridge.execute_batch",
             new=AsyncMock(side_effect=Exception("Connection refused")),
         ):
-            result = await call_tool("batch_execute", {
-                "calls": [{"toolName": "create_game_object", "arguments": {"name": "Test"}}]
-            })
+            result = await call_tool(
+                "batch_execute", {"calls": [{"toolName": "create_game_object", "arguments": {"name": "Test"}}]}
+            )
 
         text = result[0].text
         assert "error" in text.lower()
@@ -122,11 +127,14 @@ class TestBatchExecute:
             return [_success_result(c["toolName"]) for c in calls]
 
         with patch("gladekit_mcp.bridge.execute_batch", new=_mock_batch):
-            await call_tool("batch_execute", {
-                "calls": [
-                    {"toolName": "set_transform", "arguments": {"positionX": 1.5, "positionY": 0}},
-                ]
-            })
+            await call_tool(
+                "batch_execute",
+                {
+                    "calls": [
+                        {"toolName": "set_transform", "arguments": {"positionX": 1.5, "positionY": 0}},
+                    ]
+                },
+            )
 
         assert len(captured_calls) == 1
         args = captured_calls[0]["arguments"]
@@ -143,11 +151,14 @@ class TestBatchExecute:
             return [_success_result(c["toolName"]) for c in calls]
 
         with patch("gladekit_mcp.bridge.execute_batch", new=_mock_batch):
-            await call_tool("batch_execute", {
-                "calls": [
-                    {"toolName": "create_game_object", "arguments": {"name": "Cube", "parent": None}},
-                ]
-            })
+            await call_tool(
+                "batch_execute",
+                {
+                    "calls": [
+                        {"toolName": "create_game_object", "arguments": {"name": "Cube", "parent": None}},
+                    ]
+                },
+            )
 
         args = captured_calls[0]["arguments"]
         assert "parent" not in args
@@ -163,8 +174,6 @@ class TestBatchExecute:
             return [_success_result(c["toolName"]) for c in calls]
 
         with patch("gladekit_mcp.bridge.execute_batch", new=_mock_batch):
-            await call_tool("batch_execute", {
-                "calls": [{"toolName": "get_scene_hierarchy"}]
-            })
+            await call_tool("batch_execute", {"calls": [{"toolName": "get_scene_hierarchy"}]})
 
         assert captured_calls[0]["arguments"] == {}

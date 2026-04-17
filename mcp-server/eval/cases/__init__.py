@@ -3,6 +3,7 @@
 Mirrors the Proxy eval's EvalCase/EvalResult pattern but adapted for the MCP
 protocol path: AI client → MCP server (stdio) → Unity bridge (HTTP).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -28,9 +29,7 @@ class ToolParamAssertion:
 
     def check(self, tool_calls_with_args: list[dict]) -> Optional[str]:
         """Return None on success, or a failure message."""
-        matching_calls = [
-            tc for tc in tool_calls_with_args if tc.get("name") == self.tool_name
-        ]
+        matching_calls = [tc for tc in tool_calls_with_args if tc.get("name") == self.tool_name]
         if not matching_calls:
             return f"tool '{self.tool_name}' was never called"
 

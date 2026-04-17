@@ -4,13 +4,13 @@ Negative MCP eval cases — tests what the MCP server should NOT do.
 These verify error handling, edge cases, and safety boundaries
 at the MCP protocol layer.
 """
+
 from __future__ import annotations
 
 from eval.cases import MCPEvalCase
 
 NEGATIVE = [
     # ── Unknown tool ─────────────────────────────────────────────────────────
-
     MCPEvalCase(
         id="mcp-neg-01",
         prompt="Call a non-existent tool called super_transform",
@@ -19,9 +19,7 @@ NEGATIVE = [
         forbidden_tools=["super_transform"],
         tags=["negative", "error-handling"],
     ),
-
     # ── Empty arguments ──────────────────────────────────────────────────────
-
     MCPEvalCase(
         id="mcp-neg-02",
         prompt="Create a game object with no name",
@@ -30,9 +28,7 @@ NEGATIVE = [
         required_tools=["create_game_object"],
         tags=["negative", "error-handling"],
     ),
-
     # ── Read-only queries should not mutate ──────────────────────────────────
-
     MCPEvalCase(
         id="mcp-neg-03",
         prompt="List all GameObjects in the scene",
@@ -48,9 +44,7 @@ NEGATIVE = [
         ],
         tags=["negative", "read-only"],
     ),
-
     # ── Session memory edge cases ────────────────────────────────────────────
-
     MCPEvalCase(
         id="mcp-neg-04",
         prompt="Remember an empty fact",
@@ -59,7 +53,6 @@ NEGATIVE = [
         required_tools=["remember_for_session"],
         tags=["negative", "meta"],
     ),
-
     MCPEvalCase(
         id="mcp-neg-05",
         prompt="Recall memories when none exist",
@@ -68,9 +61,7 @@ NEGATIVE = [
         required_tools=["recall_session_memories"],
         tags=["negative", "meta"],
     ),
-
     # ── Bridge unavailable ───────────────────────────────────────────────────
-
     MCPEvalCase(
         id="mcp-neg-06",
         prompt="Create a cube when Unity bridge is down",
@@ -79,9 +70,7 @@ NEGATIVE = [
         required_tools=["create_game_object"],
         tags=["negative", "error-handling", "bridge-down"],
     ),
-
     # ── Tool dispatch with null args ─────────────────────────────────────────
-
     MCPEvalCase(
         id="mcp-neg-07",
         prompt="Set transform with null values",
@@ -90,9 +79,7 @@ NEGATIVE = [
         required_tools=["set_transform"],
         tags=["negative", "sanitization"],
     ),
-
     # ── Numeric coercion ─────────────────────────────────────────────────────
-
     MCPEvalCase(
         id="mcp-neg-08",
         prompt="Set transform with numeric values instead of strings",

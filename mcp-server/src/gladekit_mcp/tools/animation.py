@@ -2,7 +2,7 @@
 Animation category tools — Animator Controllers, blend trees, states, transitions, animation clips.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "animation",

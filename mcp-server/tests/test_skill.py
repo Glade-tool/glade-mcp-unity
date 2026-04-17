@@ -2,7 +2,7 @@
 
 import json
 
-from gladekit_mcp.skill import load_skill_level, _MIN_MESSAGES
+from gladekit_mcp.skill import _MIN_MESSAGES, load_skill_level
 
 
 def test_load_skill_level_missing_file(tmp_path):

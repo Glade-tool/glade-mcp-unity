@@ -20,6 +20,7 @@ Usage (from mcp-server/)
 
 Exit code: 0 if all cases pass, 1 otherwise.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -57,16 +58,13 @@ async def _run_suite(
     latency_budget: Optional[float],
 ) -> list:
     if filter_str:
-        cases = [
-            c for c in cases
-            if filter_str in c.id or any(filter_str in t for t in c.tags)
-        ]
+        cases = [c for c in cases if filter_str in c.id or any(filter_str in t for t in c.tags)]
 
     if not cases:
         print("No cases matched the filter.")
         return []
 
-    print(f"\nGladeKit MCP Eval Harness")
+    print("\nGladeKit MCP Eval Harness")
     print(f"  Suite         : {len(cases)} case(s)")
     print(f"  Bridge        : {bridge_url}")
     print(f"  Parallel      : {concurrency}")
@@ -76,9 +74,7 @@ async def _run_suite(
 
     async def _run_one(case):
         async with sem:
-            result = await run_case_direct(
-                case, bridge_url, timeout=timeout, latency_budget=latency_budget
-            )
+            result = await run_case_direct(case, bridge_url, timeout=timeout, latency_budget=latency_budget)
             print_result(result, verbose=verbose)
             return result
 
@@ -119,6 +115,7 @@ def main() -> None:
 
         # Pre-flight check
         import httpx
+
         try:
             resp = httpx.get(f"{bridge_url}/api/health", timeout=5)
             health = resp.json()

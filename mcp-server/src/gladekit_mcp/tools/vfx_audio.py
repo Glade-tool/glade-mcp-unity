@@ -2,7 +2,7 @@
 VFX & Audio category tools — particle systems, audio sources, audio clips.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "vfx_audio",

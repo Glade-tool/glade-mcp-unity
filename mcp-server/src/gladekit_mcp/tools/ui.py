@@ -2,7 +2,7 @@
 UI category tools — Canvas, UI elements, TextMeshPro, event system, layout groups.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "ui",

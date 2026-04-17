@@ -19,23 +19,38 @@ to the current request rather than all 222 tools simultaneously.
     (always includes ALWAYS_INCLUDED + matched groups)
 """
 
-from typing import List, Dict, Set
+from typing import Dict, List, Set
 
-from .core import TOOLS as CORE_TOOLS, CATEGORY as CORE_CATEGORY
-from .scene import TOOLS as SCENE_TOOLS, CATEGORY as SCENE_CATEGORY
-from .scripting import TOOLS as SCRIPTING_TOOLS, CATEGORY as SCRIPTING_CATEGORY
-from .prefabs import TOOLS as PREFAB_TOOLS, CATEGORY as PREFAB_CATEGORY
-from .materials import TOOLS as MATERIAL_TOOLS, CATEGORY as MATERIAL_CATEGORY
-from .lighting import TOOLS as LIGHTING_TOOLS, CATEGORY as LIGHTING_CATEGORY
-from .vfx_audio import TOOLS as VFX_AUDIO_TOOLS, CATEGORY as VFX_AUDIO_CATEGORY
-from .animation import TOOLS as ANIMATION_TOOLS, CATEGORY as ANIMATION_CATEGORY
-from .ik import TOOLS as IK_TOOLS, CATEGORY as IK_CATEGORY
-from .physics import TOOLS as PHYSICS_TOOLS, CATEGORY as PHYSICS_CATEGORY
-from .profiler import TOOLS as PROFILER_TOOLS, CATEGORY as PROFILER_CATEGORY
-from .camera import TOOLS as CAMERA_TOOLS, CATEGORY as CAMERA_CATEGORY
-from .ui import TOOLS as UI_TOOLS, CATEGORY as UI_CATEGORY
-from .input_system import TOOLS as INPUT_TOOLS, CATEGORY as INPUT_CATEGORY
-from .terrain_nav import TOOLS as TERRAIN_NAV_TOOLS, CATEGORY as TERRAIN_NAV_CATEGORY
+from .animation import CATEGORY as ANIMATION_CATEGORY
+from .animation import TOOLS as ANIMATION_TOOLS
+from .camera import CATEGORY as CAMERA_CATEGORY
+from .camera import TOOLS as CAMERA_TOOLS
+from .core import CATEGORY as CORE_CATEGORY
+from .core import TOOLS as CORE_TOOLS
+from .ik import CATEGORY as IK_CATEGORY
+from .ik import TOOLS as IK_TOOLS
+from .input_system import CATEGORY as INPUT_CATEGORY
+from .input_system import TOOLS as INPUT_TOOLS
+from .lighting import CATEGORY as LIGHTING_CATEGORY
+from .lighting import TOOLS as LIGHTING_TOOLS
+from .materials import CATEGORY as MATERIAL_CATEGORY
+from .materials import TOOLS as MATERIAL_TOOLS
+from .physics import CATEGORY as PHYSICS_CATEGORY
+from .physics import TOOLS as PHYSICS_TOOLS
+from .prefabs import CATEGORY as PREFAB_CATEGORY
+from .prefabs import TOOLS as PREFAB_TOOLS
+from .profiler import CATEGORY as PROFILER_CATEGORY
+from .profiler import TOOLS as PROFILER_TOOLS
+from .scene import CATEGORY as SCENE_CATEGORY
+from .scene import TOOLS as SCENE_TOOLS
+from .scripting import CATEGORY as SCRIPTING_CATEGORY
+from .scripting import TOOLS as SCRIPTING_TOOLS
+from .terrain_nav import CATEGORY as TERRAIN_NAV_CATEGORY
+from .terrain_nav import TOOLS as TERRAIN_NAV_TOOLS
+from .ui import CATEGORY as UI_CATEGORY
+from .ui import TOOLS as UI_TOOLS
+from .vfx_audio import CATEGORY as VFX_AUDIO_CATEGORY
+from .vfx_audio import TOOLS as VFX_AUDIO_TOOLS
 
 # All categories in priority order (core always first)
 ALL_CATEGORIES = [

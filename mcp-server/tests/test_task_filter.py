@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from gladekit_mcp.tools.task_filter import (
-    ALWAYS_INCLUDED,
     categorize_message,
     get_relevant_tool_summary,
     get_tools_for_request,
@@ -52,9 +51,7 @@ class TestCategorizeMessage:
     )
     def test_keyword_matches_category(self, message, expected_category):
         result = categorize_message(message)
-        assert expected_category in result, (
-            f"'{message}' should match '{expected_category}', got {result}"
-        )
+        assert expected_category in result, f"'{message}' should match '{expected_category}', got {result}"
 
     def test_empty_message_returns_empty(self):
         assert categorize_message("") == set()
@@ -87,6 +84,7 @@ class TestGetToolsForRequest:
     def test_unmatched_returns_all(self):
         """Unrecognized message → fail-open, all tools returned."""
         from gladekit_mcp.tools import get_unity_tool_schemas
+
         all_tools = get_tools_for_request("something totally unique and unrecognizable")
         full_set = get_unity_tool_schemas()
         assert len(all_tools) == len(full_set)

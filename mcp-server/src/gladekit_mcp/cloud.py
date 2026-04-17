@@ -26,9 +26,7 @@ import httpx
 logger = logging.getLogger("gladekit-mcp")
 
 _GLADEKIT_API_KEY = os.environ.get("GLADEKIT_API_KEY")
-_CLOUD_BASE_URL = os.environ.get(
-    "GLADEKIT_CLOUD_URL", "https://api.gladekit.com/functions/v1"
-)
+_CLOUD_BASE_URL = os.environ.get("GLADEKIT_CLOUD_URL", "https://api.gladekit.com/functions/v1")
 
 # Whether cloud features are available in this session.
 # Set to False on auth failure (401/403) to stop wasting requests.
@@ -66,12 +64,7 @@ def _handle_cloud_error(exc: Exception) -> None:
     if _invalid_key_warned:
         return
     err_str = str(exc).lower()
-    if (
-        "401" in err_str
-        or "403" in err_str
-        or "unauthorized" in err_str
-        or "forbidden" in err_str
-    ):
+    if "401" in err_str or "403" in err_str or "unauthorized" in err_str or "forbidden" in err_str:
         logger.warning(
             "GLADEKIT_API_KEY is set but the server returned an auth error — "
             "cloud features disabled for this session. Check your API key at gladekit.dev."

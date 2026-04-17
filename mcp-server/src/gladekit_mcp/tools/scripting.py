@@ -2,7 +2,7 @@
 Scripting category tools — C# scripts, assets, folders, ScriptableObjects.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "scripting",

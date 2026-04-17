@@ -236,18 +236,14 @@ def load_skill_level(project_path: Optional[str] = None) -> Optional[str]:
             return None
         return data.get("skill_level") or None
     except json.JSONDecodeError:
-        logger.warning(
-            f"Corrupt skill_level.json at {path} — resetting. Delete the file to suppress this warning."
-        )
+        logger.warning(f"Corrupt skill_level.json at {path} — resetting. Delete the file to suppress this warning.")
         return None
     except Exception as exc:
         logger.debug(f"Could not load skill level: {exc}")
         return None
 
 
-def _save_skill_level(
-    project_path: Optional[str], level: str, confidence: float, count: int
-) -> None:
+def _save_skill_level(project_path: Optional[str], level: str, confidence: float, count: int) -> None:
     path = _skill_file_path(project_path)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -262,9 +258,7 @@ def _save_skill_level(
                 f,
                 indent=2,
             )
-        logger.debug(
-            f"Saved skill level: {level} (confidence={confidence:.2f}, n={count})"
-        )
+        logger.debug(f"Saved skill level: {level} (confidence={confidence:.2f}, n={count})")
     except Exception as exc:
         logger.warning(f"Could not save skill level: {exc}")
 
@@ -300,16 +294,12 @@ def update_from_session(project_path: Optional[str] = None) -> Optional[str]:
         try:
             with open(path) as f:
                 old_data = json.load(f)
-            old_confidence = max(
-                0.0, min(1.0, float(old_data.get("confidence", session_score)))
-            )
+            old_confidence = max(0.0, min(1.0, float(old_data.get("confidence", session_score))))
             old_count = int(old_data.get("sample_count", 0))
         except Exception:
             pass
 
-    new_confidence = max(
-        0.0, min(1.0, _EMA_ALPHA * session_score + (1 - _EMA_ALPHA) * old_confidence)
-    )
+    new_confidence = max(0.0, min(1.0, _EMA_ALPHA * session_score + (1 - _EMA_ALPHA) * old_confidence))
     new_level = _classify(new_confidence)
     new_count = old_count + len(_session_messages)
 

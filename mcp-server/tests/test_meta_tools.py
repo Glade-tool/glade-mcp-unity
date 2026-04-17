@@ -9,7 +9,6 @@ import pytest
 
 from gladekit_mcp.server import call_tool, list_resources, read_resource
 
-
 # ── Session memory ────────────────────────────────────────────────────────────
 
 
@@ -97,6 +96,7 @@ class TestResources:
     async def test_health_resource_bridge_down(self):
         """Health resource returns error JSON when bridge is unreachable."""
         from gladekit_mcp.bridge import UnityBridgeError
+
         with patch(
             "gladekit_mcp.bridge.check_health",
             side_effect=UnityBridgeError("Connection refused"),

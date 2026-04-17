@@ -2,7 +2,7 @@
 IK (Inverse Kinematics) category tools — IK targets, weights, positions, controller scripts.
 """
 
-from typing import List, Dict
+from typing import Dict, List
 
 CATEGORY = {
     "name": "ik",

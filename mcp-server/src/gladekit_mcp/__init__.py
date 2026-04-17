@@ -43,17 +43,21 @@ def main() -> None:
 
     if args.command == "doctor":
         from .cli import run_doctor
+
         sys.exit(run_doctor(bridge_url=args.bridge_url, output_json=args.output_json))
 
     elif args.command == "init":
         from .cli import run_init
+
         sys.exit(run_init(bridge_url=args.bridge_url, force=args.force, dry_run=args.dry_run))
 
     elif args.command == "version":
         from .cli import run_version
+
         sys.exit(run_version())
 
     else:
         # No subcommand → run the MCP server (existing behavior)
         from .server import run_server
+
         asyncio.run(run_server())

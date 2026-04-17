@@ -1,10 +1,10 @@
 """Tests for script semantic search — validates graceful fallback behaviour."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock
 
-from gladekit_mcp.search import search_scripts, is_available
-
+from gladekit_mcp.search import is_available, search_scripts
 
 SAMPLE_SCRIPTS = [
     {
@@ -60,9 +60,7 @@ async def test_search_rate_limit_falls_back(monkeypatch):
     except ImportError:
         pytest.skip("openai package not installed")
 
-    with patch(
-        "gladekit_mcp.search._embed_batch", new_callable=AsyncMock
-    ) as mock_embed:
+    with patch("gladekit_mcp.search._embed_batch", new_callable=AsyncMock) as mock_embed:
         mock_embed.side_effect = openai.RateLimitError(
             message="Rate limit exceeded",
             response=None,  # type: ignore
