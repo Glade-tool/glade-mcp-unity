@@ -197,14 +197,50 @@ def _classify(confidence: float) -> str:
 
 # ── Session accumulator ──────────────────────────────────────────────────────
 
-# Accumulated messages for the current MCP server process (one process = one session)
-_session_messages: list[str] = []
+# Messages accumulated per session id. stdio always uses the "_stdio" key
+# (one process = one conversation). HTTP uses the mcp-session-id header so
+# concurrent clients don't pollute each other's calibration signal.
+_session_messages: dict[str, list[str]] = {}
+
+# Messages persisted per (session_id) — used to throttle disk writes so we
+# don't re-persist on every single get_relevant_tools call.
+_last_persisted_count: dict[str, int] = {}
+
+# Persist after the threshold, then re-persist every Nth new message.
+_PERSIST_EVERY_N_AFTER_THRESHOLD = 3
 
 
-def record_message(message: str) -> None:
-    """Add a user message to the current session's message pool."""
+def record_message(message: str, session_id: str = "_stdio") -> None:
+    """Add a user message to the given session's message pool."""
     if message and message.strip():
-        _session_messages.append(message.strip())
+        _session_messages.setdefault(session_id, []).append(message.strip())
+
+
+def should_persist_now(session_id: str = "_stdio") -> bool:
+    """Cheap check — true iff the next maybe_persist call would actually write.
+
+    Use this to gate expensive project-path lookups on the hot path so a
+    no-op `maybe_persist` doesn't cost a bridge round-trip.
+    """
+    count = len(_session_messages.get(session_id, []))
+    if count < _MIN_MESSAGES:
+        return False
+    last = _last_persisted_count.get(session_id, 0)
+    return last == 0 or (count - last) >= _PERSIST_EVERY_N_AFTER_THRESHOLD
+
+
+def maybe_persist(project_path: Optional[str], session_id: str = "_stdio") -> Optional[str]:
+    """Persist skill level if this session has accumulated enough new signal.
+
+    Called opportunistically from the hot path (no explicit session-end hook
+    exists for stdio MCP). Writes on first crossing of `_MIN_MESSAGES`, then
+    every `_PERSIST_EVERY_N_AFTER_THRESHOLD` new messages after that.
+    """
+    if not should_persist_now(session_id):
+        return None
+    level = update_from_session(project_path, session_id=session_id)
+    _last_persisted_count[session_id] = len(_session_messages.get(session_id, []))
+    return level
 
 
 # ── Persistence ──────────────────────────────────────────────────────────────
@@ -263,19 +299,20 @@ def _save_skill_level(project_path: Optional[str], level: str, confidence: float
         logger.warning(f"Could not save skill level: {exc}")
 
 
-def update_from_session(project_path: Optional[str] = None) -> Optional[str]:
+def update_from_session(project_path: Optional[str] = None, session_id: str = "_stdio") -> Optional[str]:
     """
     Analyze accumulated session messages and update the persisted skill level.
 
     Returns the newly computed skill level, or None if too few messages.
-    Called at end of session or when enough messages have accumulated.
+    Called opportunistically from maybe_persist() — stdio has no session-end hook.
     """
-    if len(_session_messages) < _MIN_MESSAGES:
+    msgs = _session_messages.get(session_id, [])
+    if len(msgs) < _MIN_MESSAGES:
         return None
 
     total_expert = 0
     total_beginner = 0
-    for msg in _session_messages:
+    for msg in msgs:
         e, b = _score_message(msg)
         total_expert += e
         total_beginner += b
@@ -301,11 +338,11 @@ def update_from_session(project_path: Optional[str] = None) -> Optional[str]:
 
     new_confidence = max(0.0, min(1.0, _EMA_ALPHA * session_score + (1 - _EMA_ALPHA) * old_confidence))
     new_level = _classify(new_confidence)
-    new_count = old_count + len(_session_messages)
+    new_count = old_count + len(msgs)
 
     _save_skill_level(project_path, new_level, new_confidence, new_count)
     logger.info(
         f"Skill calibration: {new_level} (confidence={new_confidence:.2f}, "
-        f"expert={total_expert}, beginner={total_beginner}, n={len(_session_messages)})"
+        f"expert={total_expert}, beginner={total_beginner}, n={len(msgs)})"
     )
     return new_level

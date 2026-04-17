@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -29,6 +29,29 @@ class UnityBridgeError(Exception):
     """Raised when the Unity bridge is unreachable or returns an unexpected error."""
 
 
+# Shared HTTP client — keepalive connections avoid the TCP-connect tax on every
+# bridge call. Lazily created inside an async context so we don't bind to a
+# loop the caller doesn't own.
+_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(
+            limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=30.0),
+        )
+    return _client
+
+
+async def aclose_client() -> None:
+    """Close the shared client. Safe to call multiple times."""
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
+
+
 # ── Health / availability ────────────────────────────────────────────────────
 
 
@@ -36,10 +59,9 @@ async def check_health(bridge_url: str = DEFAULT_BRIDGE_URL) -> dict:
     """Ping /api/health. Returns health dict or raises UnityBridgeError."""
     url = f"{bridge_url}/api/health"
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, timeout=5.0)
-            resp.raise_for_status()
-            return resp.json()
+        resp = await _get_client().get(url, timeout=5.0)
+        resp.raise_for_status()
+        return resp.json()
     except Exception as exc:
         raise UnityBridgeError(f"Unity bridge not reachable at {bridge_url}: {exc}") from exc
 
@@ -73,14 +95,13 @@ async def execute_tool(
     body = {"toolName": tool_name, "arguments": json.dumps(arguments)}
 
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                url,
-                json=body,
-                timeout=timeout,
-                headers={"Content-Type": "application/json"},
-            )
-            data = resp.json()
+        resp = await _get_client().post(
+            url,
+            json=body,
+            timeout=timeout,
+            headers={"Content-Type": "application/json"},
+        )
+        data = resp.json()
     except httpx.HTTPStatusError as exc:
         return json.dumps(
             {
@@ -137,14 +158,13 @@ async def execute_batch(
     }
 
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                url,
-                json=body,
-                timeout=timeout,
-                headers={"Content-Type": "application/json"},
-            )
-            data = resp.json()
+        resp = await _get_client().post(
+            url,
+            json=body,
+            timeout=timeout,
+            headers={"Content-Type": "application/json"},
+        )
+        data = resp.json()
     except Exception as exc:
         return [{"toolName": "batch", "success": False, "error": f"Unity bridge error: {exc}"}]
 
@@ -174,14 +194,13 @@ async def gather_scene_context(bridge_url: str = DEFAULT_BRIDGE_URL) -> dict:
     url = f"{bridge_url}/api/context/gather"
 
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                url,
-                json={},
-                timeout=CONTEXT_GATHER_TIMEOUT,
-                headers={"Content-Type": "application/json"},
-            )
-            outer = resp.json()
+        resp = await _get_client().post(
+            url,
+            json={},
+            timeout=CONTEXT_GATHER_TIMEOUT,
+            headers={"Content-Type": "application/json"},
+        )
+        outer = resp.json()
     except Exception as exc:
         raise UnityBridgeError(f"Could not gather scene context: {exc}") from exc
 
@@ -216,9 +235,8 @@ async def _wait_for_compilation(
     saw_compiling = False
     while elapsed < timeout_seconds:
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=5.0)
-                status = resp.json()
+            resp = await _get_client().get(url, timeout=5.0)
+            status = resp.json()
             is_compiling = status.get("isCompiling", False)
             current_count = status.get("compilationCount", -1)
 

@@ -60,10 +60,15 @@ async def test_search_rate_limit_falls_back(monkeypatch):
     except ImportError:
         pytest.skip("openai package not installed")
 
+    import httpx
+
+    fake_request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
+    fake_response = httpx.Response(429, request=fake_request)
+
     with patch("gladekit_mcp.search._embed_batch", new_callable=AsyncMock) as mock_embed:
         mock_embed.side_effect = openai.RateLimitError(
             message="Rate limit exceeded",
-            response=None,  # type: ignore
+            response=fake_response,
             body=None,
         )
         results = await search_scripts("player movement", SAMPLE_SCRIPTS, top_n=3)

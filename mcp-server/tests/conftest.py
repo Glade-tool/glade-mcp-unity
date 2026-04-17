@@ -57,9 +57,32 @@ def mock_bridge_context():
 
 @pytest.fixture(autouse=True)
 def reset_session_memory():
-    """Clear session memory between tests."""
-    from gladekit_mcp import server
+    """Clear session memory and skill state between tests."""
+    from gladekit_mcp import server, skill
 
     server._session_memory.clear()
+    skill._session_messages.clear()
+    skill._last_persisted_count.clear()
     yield
     server._session_memory.clear()
+    skill._session_messages.clear()
+    skill._last_persisted_count.clear()
+
+
+@pytest.fixture(autouse=True)
+def reset_shared_http_clients():
+    """Reset module-level httpx clients between tests.
+
+    pytest-asyncio creates a fresh event loop per test. Shared clients are
+    loop-bound, so reusing one across tests trips RuntimeError. Resetting
+    forces a fresh client on each test's loop.
+    """
+    from gladekit_mcp import bridge, cloud, search
+
+    bridge._client = None
+    cloud._http_client = None
+    search._openai_client = None
+    yield
+    bridge._client = None
+    cloud._http_client = None
+    search._openai_client = None

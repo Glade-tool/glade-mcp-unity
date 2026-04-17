@@ -171,6 +171,24 @@ def get_mcp_tools() -> list[types.Tool]:
     return _mcp_tools
 
 
+def sanitize_args(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Normalize tool arguments for the Unity bridge.
+
+    - Strip null values (Unity AI Gateway sends null for optional params).
+    - Coerce ints/floats to strings (LLMs send 0.5 instead of "0.5" for string params).
+    - Preserve bools as-is (isinstance bool returns True for int — guard against coercion).
+    """
+    sanitized: dict[str, Any] = {}
+    for k, v in arguments.items():
+        if v is None:
+            continue
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            sanitized[k] = str(v)
+        else:
+            sanitized[k] = v
+    return sanitized
+
+
 async def dispatch_tool_call(name: str, arguments: dict[str, Any]) -> str:
     """
     Execute a tool call by dispatching to the Unity bridge.
@@ -188,21 +206,8 @@ async def dispatch_tool_call(name: str, arguments: dict[str, Any]) -> str:
             }
         )
 
-    # Sanitize arguments for LLM quirks:
-    # - Strip null values (Unity AI Gateway sends null for optional params)
-    # - Coerce numbers to strings (LLMs send 0.5 instead of "0.5" for string params)
-    sanitized = {}
-    for k, v in arguments.items():
-        if v is None:
-            continue
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
-            sanitized[k] = str(v)
-        else:
-            sanitized[k] = v
-    arguments = sanitized
-
     try:
-        result = await bridge.execute_tool(name, arguments)
+        result = await bridge.execute_tool(name, sanitize_args(arguments))
         return result
     except Exception as exc:
         logger.error(f"Tool execution error for {name}: {exc}")

@@ -8,6 +8,7 @@ Runs on stdio transport for compatibility with Cursor, Claude Code, Windsurf.
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
@@ -18,7 +19,7 @@ from mcp.server.stdio import stdio_server
 
 from . import DEFAULT_HTTP_HOST, DEFAULT_HTTP_PATH, DEFAULT_HTTP_PORT, bridge, cloud, search, skill
 from .prompts import build_prompt_from_bridge
-from .tools.registry import dispatch_tool_call, get_mcp_tools
+from .tools.registry import dispatch_tool_call, get_mcp_tools, sanitize_args
 from .tools.task_filter import get_relevant_tool_summary
 
 logger = logging.getLogger("gladekit-mcp")
@@ -42,9 +43,16 @@ server = Server(
 )
 
 # ── In-session memory ─────────────────────────────────────────────────────────
-# Simple list of facts the AI stores during the current session. Persists for
-# the lifetime of this MCP server process (one process = one conversation).
-_session_memory: list[str] = []
+# Facts the AI stores during the current session. Under stdio (one process =
+# one conversation) all calls share the default bucket. Under streamable-HTTP
+# (one process = many concurrent clients) the ASGI wrapper sets the session id
+# from the `mcp-session-id` header so each client gets its own bucket.
+_session_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("gladekit_session_id", default="_stdio")
+_session_memory: dict[str, list[str]] = {}
+
+
+def _current_session_memory() -> list[str]:
+    return _session_memory.setdefault(_session_id_var.get(), [])
 
 
 # ── Meta-tools ────────────────────────────────────────────────────────────────
@@ -184,9 +192,22 @@ async def call_tool(
     # ── get_relevant_tools ────────────────────────────────────────────────────
     if name == "get_relevant_tools":
         message = arguments.get("message", "")
-        # Side-effect: accumulate message for skill calibration
+        # Side-effect: accumulate message for skill calibration, then persist
+        # opportunistically (every 3rd message past the threshold). stdio has
+        # no session-end hook, so inline-throttled persistence is the only
+        # reliable way to commit calibration to disk. skill.should_persist_now
+        # cheaply short-circuits the common case so we don't pay for a bridge
+        # health check on every call.
         if message:
-            skill.record_message(message)
+            sid = _session_id_var.get()
+            skill.record_message(message, session_id=sid)
+            if skill.should_persist_now(session_id=sid):
+                try:
+                    health = await bridge.check_health()
+                    project_path = health.get("projectPath") or None
+                except bridge.UnityBridgeError:
+                    project_path = None
+                skill.maybe_persist(project_path, session_id=sid)
         result = get_relevant_tool_summary(message)
 
         # Inject RAG context from cloud knowledge base (paid tier)
@@ -202,7 +223,8 @@ async def call_tool(
         fact = arguments.get("fact", "").strip()
         if not fact:
             return [types.TextContent(type="text", text="No fact provided.")]
-        _session_memory.append(fact)
+        memory = _current_session_memory()
+        memory.append(fact)
 
         # Persist to cloud memory (paid tier, best-effort)
         if cloud.is_available():
@@ -217,15 +239,16 @@ async def call_tool(
         return [
             types.TextContent(
                 type="text",
-                text=f"Stored. Session memory now has {len(_session_memory)} item(s).",
+                text=f"Stored. Session memory now has {len(memory)} item(s).",
             )
         ]
 
     # ── recall_session_memories ───────────────────────────────────────────────
     if name == "recall_session_memories":
-        if not _session_memory:
+        memory = _current_session_memory()
+        if not memory:
             return [types.TextContent(type="text", text="No session memories stored yet.")]
-        items = "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(_session_memory))
+        items = "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(memory))
         return [types.TextContent(type="text", text=f"Session memories:\n{items}")]
 
     # ── batch_execute ────────────────────────────────────────────────────────
@@ -237,19 +260,13 @@ async def call_tool(
             return [types.TextContent(type="text", text="Maximum 50 tool calls per batch.")]
 
         # Sanitize arguments the same way dispatch_tool_call does
-        sanitized_calls = []
-        for call in calls:
-            tool_name = call.get("toolName", "")
-            raw_args = call.get("arguments", {}) or {}
-            clean_args = {}
-            for k, v in raw_args.items():
-                if v is None:
-                    continue
-                if isinstance(v, (int, float)) and not isinstance(v, bool):
-                    clean_args[k] = str(v)
-                else:
-                    clean_args[k] = v
-            sanitized_calls.append({"toolName": tool_name, "arguments": clean_args})
+        sanitized_calls = [
+            {
+                "toolName": call.get("toolName", ""),
+                "arguments": sanitize_args(call.get("arguments", {}) or {}),
+            }
+            for call in calls
+        ]
 
         try:
             results = await bridge.execute_batch(sanitized_calls)
@@ -414,9 +431,10 @@ async def read_resource(uri: str) -> str:
             return f"GLADE.md not available: {e}"
 
     if uri_str == "unity://session-memory":
-        if not _session_memory:
+        memory = _current_session_memory()
+        if not memory:
             return "No session memories stored yet. Use remember_for_session to store facts."
-        return "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(_session_memory))
+        return "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(memory))
 
     return json.dumps({"error": f"Unknown resource: {uri_str}"})
 
@@ -463,8 +481,9 @@ async def get_prompt(name: str, arguments: dict | None = None) -> types.GetPromp
                 memory_parts.append(cloud_memories)
 
         # Session memories (current conversation, always available)
-        if _session_memory:
-            items = "\n".join(f"- {fact}" for fact in _session_memory)
+        session_memory = _current_session_memory()
+        if session_memory:
+            items = "\n".join(f"- {fact}" for fact in session_memory)
             memory_parts.append(f"### Session Notes\n\n{items}")
 
         project_memories = "\n\n".join(memory_parts) if memory_parts else None
@@ -505,12 +524,16 @@ async def run_server():
     import sys
 
     print(_banner("stdio"), file=sys.stderr)
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(
-            read_stream,
-            write_stream,
-            server.create_initialization_options(),
-        )
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(
+                read_stream,
+                write_stream,
+                server.create_initialization_options(),
+            )
+    finally:
+        await bridge.aclose_client()
+        await cloud.aclose_client()
 
 
 def build_http_app(
@@ -556,13 +579,28 @@ def build_http_app(
     )
 
     class _MCPAsgiApp:
-        """ASGI wrapper so Starlette routes the request as-is (not via request_response)."""
+        """ASGI wrapper so Starlette routes the request as-is (not via request_response).
+
+        Also binds the per-request session id to a ContextVar so server-side
+        state (session memory, skill messages) is scoped to the caller rather
+        than shared across all HTTP clients.
+        """
 
         def __init__(self, manager):
             self._manager = manager
 
         async def __call__(self, scope, receive, send):
-            await self._manager.handle_request(scope, receive, send)
+            sid = "_http-init"
+            if scope.get("type") == "http":
+                for key, value in scope.get("headers") or []:
+                    if key == b"mcp-session-id":
+                        sid = value.decode("latin-1") or sid
+                        break
+            token = _session_id_var.set(sid)
+            try:
+                await self._manager.handle_request(scope, receive, send)
+            finally:
+                _session_id_var.reset(token)
 
     mcp_asgi = _MCPAsgiApp(session_manager)
 

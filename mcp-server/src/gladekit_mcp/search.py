@@ -38,6 +38,16 @@ _DEFAULT_TOP_N = 5
 # Avoids re-embedding the same script content across multiple searches in one session.
 _embedding_cache: dict[str, list[float]] = {}
 
+# Shared AsyncOpenAI client — avoids TLS handshake per embed call.
+_openai_client: Any = None
+
+
+def _get_openai_client():
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = _openai_module.AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    return _openai_client
+
 
 def is_available() -> bool:
     """Return True if semantic search is enabled (openai + numpy installed, API key present)."""
@@ -60,8 +70,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 
 async def _embed_batch(texts: list[str]) -> list[list[float]]:
     """Embed a batch of texts. Returns list of embedding vectors."""
-    client = _openai_module.AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    response = await client.embeddings.create(model=_EMBEDDING_MODEL, input=texts)
+    response = await _get_openai_client().embeddings.create(model=_EMBEDDING_MODEL, input=texts)
     return [item.embedding for item in response.data]
 
 

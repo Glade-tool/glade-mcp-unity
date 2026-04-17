@@ -58,6 +58,14 @@ def _get_client() -> httpx.AsyncClient:
     return _http_client
 
 
+async def aclose_client() -> None:
+    """Close the shared cloud client. Safe to call multiple times."""
+    global _http_client
+    if _http_client is not None:
+        await _http_client.aclose()
+        _http_client = None
+
+
 def _handle_cloud_error(exc: Exception) -> None:
     """Disable cloud features on auth failure (401/403). Log a one-time warning."""
     global _invalid_key_warned, _cloud_available

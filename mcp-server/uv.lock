@@ -263,6 +263,8 @@ all = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "openai" },
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 dev = [
     { name = "httpx" },
@@ -292,7 +294,9 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
+    { name = "starlette", marker = "extra == 'all'", specifier = ">=0.27" },
     { name = "starlette", marker = "extra == 'http'", specifier = ">=0.27" },
+    { name = "uvicorn", marker = "extra == 'all'", specifier = ">=0.31" },
     { name = "uvicorn", marker = "extra == 'http'", specifier = ">=0.31" },
 ]
 provides-extras = ["search", "http", "all", "dev"]
