@@ -8,6 +8,11 @@ except PackageNotFoundError:
     __version__ = "0.0.0-dev"
 
 
+DEFAULT_HTTP_HOST = "127.0.0.1"
+DEFAULT_HTTP_PORT = 8766
+DEFAULT_HTTP_PATH = "/mcp"
+
+
 def main() -> None:
     """Entry point for the gladekit-mcp / gladekit CLI command."""
     import argparse
@@ -24,6 +29,28 @@ def main() -> None:
         "--bridge-url",
         default=DEFAULT_BRIDGE_URL,
         help=f"Unity bridge URL (default: {DEFAULT_BRIDGE_URL})",
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="MCP transport (default: stdio). Use 'http' for streamable-HTTP clients like Claude Desktop URL config.",
+    )
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_HTTP_HOST,
+        help=f"HTTP bind host (default: {DEFAULT_HTTP_HOST}). Use 0.0.0.0 to expose on LAN — opt-in only.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_HTTP_PORT,
+        help=f"HTTP bind port (default: {DEFAULT_HTTP_PORT}).",
+    )
+    parser.add_argument(
+        "--path",
+        default=DEFAULT_HTTP_PATH,
+        help=f"HTTP MCP endpoint path (default: {DEFAULT_HTTP_PATH}).",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -57,7 +84,12 @@ def main() -> None:
         sys.exit(run_version())
 
     else:
-        # No subcommand → run the MCP server (existing behavior)
-        from .server import run_server
+        # No subcommand → run the MCP server
+        if args.transport == "http":
+            from .server import run_http_server
 
-        asyncio.run(run_server())
+            run_http_server(host=args.host, port=args.port, path=args.path)
+        else:
+            from .server import run_server
+
+            asyncio.run(run_server())

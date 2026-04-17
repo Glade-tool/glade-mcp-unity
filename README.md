@@ -1,8 +1,8 @@
-# GladeKit MCP
+# GladeKit Unity MCP
 
 Connect Cursor, Claude Code, Windsurf, Claude Desktop, and VS Code to your Unity Editor.
 
-**230+ tools.** A full Unity-aware system prompt. GLADE.md project context. Script semantic search. Skill calibration. Cloud intelligence layer with RAG and cross-session memory. All core features are free and local — no GladeKit account required.
+**230+ tools.** A full Unity-aware system prompt. GLADE.md project context. Script semantic search. Skill calibration. Cloud intelligence layer with RAG and cross-session memory. All core features are free and local.
 
 ---
 
@@ -24,8 +24,7 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/) (one-time)
 
 Then add the MCP config to your AI client. The client launches the MCP server automatically - no manual server step.
 
-<details>
-<summary><strong>Claude Code</strong></summary>
+**Claude Code**
 
 If you cloned this repo, the `.mcp.json` auto-connects. Otherwise add to your Claude Code MCP settings:
 
@@ -40,10 +39,7 @@ If you cloned this repo, the `.mcp.json` auto-connects. Otherwise add to your Cl
 }
 ```
 
-</details>
-
-<details>
-<summary><strong>Cursor</strong></summary>
+**Cursor**
 
 `Cursor Settings > MCP > Add new MCP server`:
 
@@ -58,10 +54,7 @@ If you cloned this repo, the `.mcp.json` auto-connects. Otherwise add to your Cl
 }
 ```
 
-</details>
-
-<details>
-<summary><strong>Claude Desktop</strong></summary>
+**Claude Desktop**
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
@@ -76,10 +69,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) or 
 }
 ```
 
-</details>
-
-<details>
-<summary><strong>Windsurf</strong></summary>
+**Windsurf**
 
 Edit `~/.codeium/windsurf/mcp_config.json`:
 
@@ -94,10 +84,7 @@ Edit `~/.codeium/windsurf/mcp_config.json`:
 }
 ```
 
-</details>
-
-<details>
-<summary><strong>Unity AI Gateway (native in-editor)</strong></summary>
+**Unity AI Gateway (native in-editor)**
 
 Unity's built-in AI Assistant can connect to GladeKit via MCP. This gives you GladeKit's 230+ tools directly inside the Unity Editor — no external AI client needed.
 
@@ -120,25 +107,19 @@ Unity's built-in AI Assistant can connect to GladeKit via MCP. This gives you Gl
 }
 ```
 
-3. Under **Path Configuration**, paste your terminal's PATH into **User Path** so Unity can find `uvx`. To get your PATH:
-   - **Mac/Linux:** `echo $PATH`
-   - **Windows:** `echo %PATH%`
-4. Click **Refresh Config File and Reload Servers**
-5. Verify the server shows **StartedSuccessfully** in the Servers section
+1. Under **Path Configuration**, paste your terminal's PATH into **User Path** so Unity can find `uvx`. To get your PATH:
+  - **Mac/Linux:** `echo $PATH`
+  - **Windows:** `echo %PATH%`
+2. Click **Refresh Config File and Reload Servers**
+3. Verify the server shows **StartedSuccessfully** in the Servers section
 
 > **Tip:** If `uvx` isn't found, add the directory containing it to the `path` field in the config (e.g., `"/opt/homebrew/bin"` on Mac or `"C:\\Users\\<you>\\.local\\bin"` on Windows). Alternatively, use `pip install gladekit-mcp` and set `"command": "python"` with `"args": ["-m", "gladekit_mcp"]`.
 
-> **Paid tier:** To enable RAG knowledge base and cross-session memory, add your API key to the `env` field:
-> ```json
-> "env": { "GLADEKIT_API_KEY": "your-api-key" }
-> ```
-
 > **Troubleshooting:** If the server shows **FailedToStart**, click **Inspect** for error details. The most common cause is PATH — Unity's PATH differs from your terminal's PATH. See the [Troubleshooting](#troubleshooting) section below.
 
-</details>
+> **Paid tier (`GLADEKIT_API_KEY`):** To enable RAG knowledge base and cross-session memory on any client, add the key to the `env` field of your config. See [Cloud intelligence](#cloud-intelligence--gladekit_api_key) below.
 
-<details>
-<summary><strong>VS Code (GitHub Copilot)</strong></summary>
+**VS Code (GitHub Copilot)**
 
 Add to `.vscode/mcp.json` in your workspace:
 
@@ -154,31 +135,28 @@ Add to `.vscode/mcp.json` in your workspace:
 }
 ```
 
-</details>
+---
+
+## Why GladeKit Unity MCP?
 
 
+| Feature            | GladeKit Unity MCP                                                                                      | unity-mcp (CoplayDev)  |
+| ------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------- |
+| Tools              | **230+ granular tools** across 15 categories                                                         | ~40 consolidated tools |
+| System prompt      | **Full Unity intelligence** — render pipeline detection, input system routing, tool discipline rules | None                   |
+| Project context    | **GLADE.md** — inject your game design doc into every request                                        | None                   |
+| Script search      | **Semantic search** via OpenAI embeddings (bring your own key)                                       | None                   |
+| Skill calibration  | **Auto-detects beginner/expert**, adapts response verbosity                                          | None                   |
+| In-session memory  | `**remember_for_session**` — AI stores and recalls facts mid-conversation                            | None                   |
+| Cloud intelligence | `**GLADEKIT_API_KEY**` — RAG knowledge base, cross-session memory, convention extraction             | None                   |
+| License            | MIT                                                                                                  | MIT                    |
+
+
+All core features are **free and local**. The cloud intelligence layer is optional and requires a `GLADEKIT_API_KEY`.
 
 ---
 
-## Why GladeKit MCP?
-
-
-| Feature             | GladeKit MCP                                                                                         | unity-mcp (CoplayDev)  |
-| ------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------- |
-| Tools               | **230+ granular tools** across 15 categories                                                         | ~40 consolidated tools |
-| System prompt       | **Full Unity intelligence** — render pipeline detection, input system routing, tool discipline rules | None                   |
-| Project context     | **GLADE.md** — inject your game design doc into every request                                        | None                   |
-| Script search       | **Semantic search** via OpenAI embeddings (bring your own key)                                       | None                   |
-| Skill calibration   | **Auto-detects beginner/expert**, adapts response verbosity                                          | None                   |
-| In-session memory   | **`remember_for_session`** — AI stores and recalls facts mid-conversation                            | None                   |
-| Cloud intelligence  | **`GLADEKIT_API_KEY`** — RAG knowledge base, cross-session memory, convention extraction             | None                   |
-| License             | MIT                                                                                                  | MIT                    |
-
-All core features are **free and local** — no GladeKit account needed. The cloud intelligence layer requires a `GLADEKIT_API_KEY`.
-
----
-
-## Features
+**Features**
 
 ### 230+ tools across 15 categories
 
@@ -190,22 +168,22 @@ All 230+ tools are dispatchable. Claude Code sees ~80 curated core tools by defa
 
 **7 MCP resources:** Bridge health, project context, scene hierarchy, project scripts, current selection, GLADE.md, and session memory.
 
-### GLADE.md - project game design doc
+### GLADE.md — project game design doc
 
 Create a `GLADE.md` file in your Unity project root. The MCP server reads it and injects it into every request. Works as a permanent context layer: your game's design intent, conventions, and constraints are always in scope.
 
 ```markdown
 # My Game
 
-Genre: 2D platformer  
-Player: CharacterController, double jump enabled  
-Art style: pixel art, 16x16 sprites  
+Genre: 2D platformer
+Player: CharacterController, double jump enabled
+Art style: pixel art, 16x16 sprites
 Naming: PascalCase for scripts, snake_case for folders
 ```
 
 ### Script semantic search
 
-With `OPENAI_API_KEY` set, the server finds relevant scripts using cosine similarity rather than filename matching. Ask "how does the enemy spawn?" and the right script surfaces - even if it's not named `EnemySpawner`.
+With `OPENAI_API_KEY` set, the server finds relevant scripts using cosine similarity rather than filename matching. Ask "how does the enemy spawn?" and the right script surfaces — even if it's not named `EnemySpawner`.
 
 ### Skill calibration
 
@@ -215,13 +193,11 @@ The server tracks vocabulary across your messages and detects whether you're a U
 
 Set `GLADEKIT_API_KEY` in your MCP config's `env` field to unlock cloud-powered features:
 
-**RAG knowledge base** — When you call `get_relevant_tools`, the server queries GladeKit's curated knowledge base of Unity docs, API corrections, and error patterns. Results are injected as additional context alongside the tool recommendations, so the AI gets authoritative Unity knowledge beyond its training data.
+- **RAG knowledge base** — `get_relevant_tools` queries a curated Unity knowledge base (API corrections, error patterns) and injects results alongside tool recommendations.
+- **Cross-session persistent memory** — facts stored with `remember_for_session` persist across sessions and are re-injected into the system prompt.
+- **Convention extraction** — the cloud backend distills coding patterns (naming, architecture, preferences) from your accumulated memories.
 
-**Cross-session persistent memory** — Facts stored with `remember_for_session` are automatically persisted to the cloud. On future sessions, accumulated memories are fetched and injected into the system prompt — the AI remembers your project conventions, past decisions, and preferences across conversations.
-
-**Convention extraction** — The cloud backend distills coding patterns from your accumulated session memories (naming conventions, architecture choices, preferred patterns) and surfaces them as project-specific guidance.
-
-All cloud features degrade gracefully: if the key is missing, invalid, or the cloud is unreachable, everything works normally — you just don't get the cloud-powered extras. No errors, no warnings in normal usage.
+All cloud features degrade gracefully: if the key is missing or the cloud is unreachable, everything works normally.
 
 ```json
 {
@@ -235,21 +211,54 @@ All cloud features degrade gracefully: if the key is missing, invalid, or the cl
 }
 ```
 
----
+**Transports (stdio + streamable HTTP)**
 
-## Environment Variables
+GladeKit MCP supports two transports. **stdio is the default** and works with all MCP clients — every config above uses stdio.
+
+**Streamable HTTP** is for clients that prefer URL-based config (Claude Desktop URL mode, custom clients). Launch the server manually, then point your client at the URL:
+
+```bash
+# Defaults: host=127.0.0.1, port=8766, path=/mcp
+gladekit-mcp --transport http
+
+# Custom host/port/path
+gladekit-mcp --transport http --host 127.0.0.1 --port 9000 --path /mcp
+```
+
+Endpoints:
+
+- `POST/GET/DELETE http://127.0.0.1:8766/mcp` — MCP streamable-HTTP endpoint
+- `GET http://127.0.0.1:8766/health` — liveness check
+
+**Security defaults:**
+
+- Binds **loopback-only** (`127.0.0.1`). Use `--host 0.0.0.0` to expose on LAN — opt-in only.
+- **DNS-rebinding protection** enabled for loopback binds: requests with a `Host` header other than `127.0.0.1:<port>` or `localhost:<port>` are rejected with `421 Misdirected Request`.
+- Non-loopback binds disable rebinding protection (you've taken responsibility for the network) and print a warning on startup.
+
+**Client config example:**
+
+```json
+{
+  "mcpServers": {
+    "gladekit-unity": {
+      "url": "http://127.0.0.1:8766/mcp"
+    }
+  }
+}
+```
+
+**Environment Variables**
 
 
-| Variable           | Required | Description                                                          |
-| ------------------ | -------- | -------------------------------------------------------------------- |
-| `UNITY_BRIDGE_URL` | No       | Unity bridge URL (default: `http://localhost:8765`)                  |
-| `OPENAI_API_KEY`   | No       | Enables script semantic search via embeddings                        |
+| Variable           | Required | Description                                                             |
+| ------------------ | -------- | ----------------------------------------------------------------------- |
+| `UNITY_BRIDGE_URL` | No       | Unity bridge URL (default: `http://localhost:8765`)                     |
+| `OPENAI_API_KEY`   | No       | Enables script semantic search via embeddings                           |
 | `GLADEKIT_API_KEY` | No       | Enables RAG knowledge base, cross-session memory, convention extraction |
 
 
----
-
-## Troubleshooting
+**Troubleshooting**
 
 **Bridge not connecting**
 
@@ -264,9 +273,9 @@ All cloud features degrade gracefully: if the key is missing, invalid, or the cl
 
 **Tools not appearing in Claude Code**
 
-- Claude Code has a practical ~128-tool limit. GladeKit shows ~80 curated core tools by default — this is intentional. All 230+ are dispatchable: use the `get_relevant_tools` tool to find extended tools by task description.
+- Claude Code has a practical ~128-tool limit. GladeKit shows ~80 curated core tools by default — this is intentional. All 230+ are dispatchable: use `get_relevant_tools` to find extended tools by task description.
 
-**`GLADE.md` not being picked up**
+`**GLADE.md` not being picked up**
 
 - The file must be named exactly `GLADE.md` (case-sensitive on Mac/Linux) and placed in the Unity project root (same directory as `Assets/`, `Packages/`, `ProjectSettings/`)
 
@@ -274,18 +283,16 @@ All cloud features degrade gracefully: if the key is missing, invalid, or the cl
 
 - Click **Inspect** in the Servers section for the error message
 - Most common cause: Unity can't find `uvx`. Under **Path Configuration**, paste your terminal's full PATH into **User Path**, then click **Refresh Config File and Reload Servers**
-- On Windows, get your PATH with `echo %PATH%` in Command Prompt. On Mac/Linux: `echo $PATH`
+- On Windows: `echo %PATH%` in Command Prompt. On Mac/Linux: `echo $PATH`
 - Alternative: use `pip install gladekit-mcp` and set the command to `"python"` with args `["-m", "gladekit_mcp"]` — avoids the `uvx` PATH dependency
-- Validate outside Unity first: run `uvx gladekit-mcp` in a terminal to confirm it starts (you should see the `gladekit-mcp v...` banner on stderr)
+- Validate outside Unity first: run `uvx gladekit-mcp` in a terminal (you should see the `gladekit-mcp v...` banner on stderr)
 
----
-
-## Architecture
+**Architecture**
 
 ```
 [AI Client: Cursor / Claude Code / Windsurf / Claude Desktop / Unity AI Gateway]
          │
-         │ stdio MCP protocol
+         │ stdio or HTTP MCP protocol
          ▼
 [gladekit_mcp Python process]
     bridge.py → HTTP localhost:8765
@@ -301,9 +308,7 @@ All cloud features degrade gracefully: if the key is missing, invalid, or the cl
     UnityContextGatherer → scene, scripts, packages, render pipeline
 ```
 
----
-
-## Contributing
+**Contributing**
 
 The Unity bridge (`unity-bridge/`) is the source of truth for C# tools. Adding a tool requires two files:
 
@@ -325,12 +330,8 @@ public class MyTool : ITool
 
 Add an entry to the category's tool list following the existing format (OpenAI function-calling schema).
 
-Tools are auto-discovered via reflection - no registration needed beyond these two files.
+Tools are auto-discovered via reflection — no registration needed beyond these two files.
 
 ---
 
-## License
-
-MIT: see [LICENSE](LICENSE).
-
-The [GladeKit desktop app](https://gladekit.dev) provides the full agentic loop experience (streaming, miss recovery, error tracking, memory UI) and is a separate commercial product.
+**License:** MIT — see [LICENSE](LICENSE). The [GladeKit desktop app](https://gladekit.dev) is a separate commercial product that layers streaming, miss recovery, and a memory UI on top of this MCP server.

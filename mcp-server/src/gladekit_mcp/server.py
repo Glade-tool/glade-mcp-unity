@@ -16,7 +16,7 @@ from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from . import bridge, cloud, search, skill
+from . import DEFAULT_HTTP_HOST, DEFAULT_HTTP_PATH, DEFAULT_HTTP_PORT, bridge, cloud, search, skill
 from .prompts import build_prompt_from_bridge
 from .tools.registry import dispatch_tool_call, get_mcp_tools
 from .tools.task_filter import get_relevant_tool_summary
@@ -487,23 +487,140 @@ async def get_prompt(name: str, arguments: dict | None = None) -> types.GetPromp
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 
-async def run_server():
-    """Run the MCP server on stdio transport."""
-    from . import __version__, cloud
+def _banner(transport: str) -> str:
+    from . import __version__
     from . import search as search_mod
 
     bridge_url = os.environ.get("UNITY_BRIDGE_URL", "http://localhost:8765")
     search_status = "ENABLED" if search_mod.is_available() else "DISABLED (set OPENAI_API_KEY to enable)"
     cloud_status = "ENABLED" if cloud.is_available() else "DISABLED (set GLADEKIT_API_KEY to enable)"
+    return (
+        f"gladekit-mcp v{__version__} | transport: {transport} | bridge: {bridge_url} "
+        f"| search: {search_status} | cloud: {cloud_status}"
+    )
+
+
+async def run_server():
+    """Run the MCP server on stdio transport."""
     import sys
 
-    print(
-        f"gladekit-mcp v{__version__} | bridge: {bridge_url} | search: {search_status} | cloud: {cloud_status}",
-        file=sys.stderr,
-    )
+    print(_banner("stdio"), file=sys.stderr)
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
             write_stream,
             server.create_initialization_options(),
         )
+
+
+def build_http_app(
+    host: str = DEFAULT_HTTP_HOST,
+    port: int = DEFAULT_HTTP_PORT,
+    path: str = DEFAULT_HTTP_PATH,
+):
+    """Build a Starlette ASGI app serving the MCP server over streamable HTTP.
+
+    - Mounts the streamable-HTTP transport at ``path`` (default ``/mcp``).
+    - Adds a ``/health`` endpoint for connection checks.
+    - Enables DNS rebinding protection when binding to localhost. When the user
+      explicitly opts into LAN binding (non-loopback host), protection is
+      disabled so external clients can reach the server.
+    """
+    import contextlib
+
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+    from mcp.server.transport_security import TransportSecuritySettings
+    from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+
+    from . import __version__
+
+    is_loopback = host in ("127.0.0.1", "localhost", "::1")
+    if is_loopback:
+        security_settings = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[f"127.0.0.1:{port}", f"localhost:{port}"],
+            allowed_origins=[f"http://127.0.0.1:{port}", f"http://localhost:{port}"],
+        )
+    else:
+        security_settings = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+
+    session_manager = StreamableHTTPSessionManager(
+        app=server,
+        json_response=False,
+        stateless=False,
+        security_settings=security_settings,
+        session_idle_timeout=1800,
+    )
+
+    class _MCPAsgiApp:
+        """ASGI wrapper so Starlette routes the request as-is (not via request_response)."""
+
+        def __init__(self, manager):
+            self._manager = manager
+
+        async def __call__(self, scope, receive, send):
+            await self._manager.handle_request(scope, receive, send)
+
+    mcp_asgi = _MCPAsgiApp(session_manager)
+
+    async def health(_request: Request) -> JSONResponse:
+        return JSONResponse(
+            {
+                "status": "ok",
+                "version": __version__,
+                "transport": "http",
+                "mcpPath": path,
+            }
+        )
+
+    normalized_path = path if path.startswith("/") else "/" + path
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app):
+        async with session_manager.run():
+            yield
+
+    return Starlette(
+        routes=[
+            Route("/health", endpoint=health, methods=["GET"]),
+            Route(normalized_path, endpoint=mcp_asgi),
+        ],
+        lifespan=lifespan,
+    )
+
+
+def run_http_server(
+    host: str = DEFAULT_HTTP_HOST,
+    port: int = DEFAULT_HTTP_PORT,
+    path: str = DEFAULT_HTTP_PATH,
+) -> None:
+    """Run the MCP server on streamable HTTP transport via uvicorn."""
+    import sys
+
+    try:
+        import uvicorn
+    except ImportError as e:  # pragma: no cover
+        raise SystemExit(
+            "HTTP transport requires uvicorn + starlette. Install with: pip install 'gladekit-mcp[http]'"
+        ) from e
+
+    is_loopback = host in ("127.0.0.1", "localhost", "::1")
+    if not is_loopback:
+        print(
+            f"WARNING: binding to {host}:{port} exposes GladeKit MCP on the network. "
+            "DNS-rebinding protection is disabled for non-loopback binds — ensure the "
+            "network is trusted.",
+            file=sys.stderr,
+        )
+
+    print(_banner("http"), file=sys.stderr)
+    print(
+        f"gladekit-mcp HTTP server listening at http://{host}:{port}{path}",
+        file=sys.stderr,
+    )
+
+    app = build_http_app(host=host, port=port, path=path)
+    uvicorn.run(app, host=host, port=port, log_level="warning")
