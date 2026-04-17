@@ -157,7 +157,6 @@ Add to `.vscode/mcp.json` in your workspace:
 
 ## Why GladeKit Unity MCP?
 
-
 | Feature            | GladeKit Unity MCP                                                                                   | unity-mcp (CoplayDev)  |
 | ------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------- |
 | Tools              | **230+ granular tools** across 15 categories                                                         | ~40 consolidated tools |
@@ -168,7 +167,6 @@ Add to `.vscode/mcp.json` in your workspace:
 | In-session memory  | `remember_for_session` - AI stores and recalls facts mid-conversation                                | None                   |
 | Cloud intelligence | `GLADEKIT_API_KEY` - RAG knowledge base, cross-session memory, convention extraction                 | None                   |
 | License            | MIT                                                                                                  | MIT                    |
-
 
 All core features are **free and local**. The cloud intelligence layer is optional and requires a `GLADEKIT_API_KEY`.
 
@@ -185,6 +183,10 @@ All 230+ tools are dispatchable. Claude Code sees ~80 curated core tools by defa
 **5 meta-tools:** `get_relevant_tools` (task-based tool discovery + RAG context), `remember_for_session` (store facts), `recall_session_memories` (retrieve facts), `batch_execute` (multi-step tool dispatch), `search_project_scripts` (semantic code search).
 
 **7 MCP resources:** Bridge health, project context, scene hierarchy, project scripts, current selection, GLADE.md, and session memory.
+
+### Testing & Verification
+
+See [TESTING.md](TESTING.md) for a complete guide to verifying that GladeKit works correctly with your setup. Includes smoke tests, golden-path workflows, and troubleshooting steps.
 
 ### GLADE.md
 
@@ -229,7 +231,7 @@ All cloud features degrade gracefully: if the key is missing or the cloud is unr
 }
 ```
 
-**Transports (stdio + streamable HTTP)**
+### Transports (stdio + streamable HTTP)
 
 GladeKit MCP supports two transports. **stdio is the default** and works with all MCP clients - every config above uses stdio.
 
@@ -266,8 +268,7 @@ Endpoints:
 }
 ```
 
-**Environment Variables**
-
+### Environment Variables
 
 | Variable           | Required | Description                                                             |
 | ------------------ | -------- | ----------------------------------------------------------------------- |
@@ -275,8 +276,7 @@ Endpoints:
 | `OPENAI_API_KEY`   | No       | Enables script semantic search via embeddings                           |
 | `GLADEKIT_API_KEY` | No       | Enables RAG knowledge base, cross-session memory, convention extraction |
 
-
-**Troubleshooting**
+### Troubleshooting
 
 **Bridge not connecting**
 
@@ -305,7 +305,7 @@ Endpoints:
 - Alternative: use `pip install gladekit-mcp` and set the command to `"python"` with args `["-m", "gladekit_mcp"]` - avoids the `uvx` PATH dependency
 - Validate outside Unity first: run `uvx gladekit-mcp` in a terminal (you should see the `gladekit-mcp v...` banner on stderr)
 
-**Architecture**
+### Architecture
 
 ```
 [AI Client: Cursor / Claude Code / Windsurf / Claude Desktop / Unity AI Gateway]
@@ -326,7 +326,7 @@ Endpoints:
     UnityContextGatherer -> scene, scripts, packages, render pipeline
 ```
 
-**Contributing**
+### Contributing
 
 The Unity bridge (`unity-bridge/`) is the source of truth for C# tools. Adding a tool requires two files:
 

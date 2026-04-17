@@ -484,15 +484,40 @@ namespace GladeAgenticAI.Bridge
                 string requestBody = ReadRequestBody(context.Request);
                 var request = JsonUtility.FromJson<BatchExecuteRequest>(requestBody);
 
+                if (request == null)
+                {
+                    Debug.LogError($"[UnityBridge] Failed to deserialize batch request. Body: {requestBody}");
+                    var errorResponse = new BatchExecuteResponse
+                    {
+                        success = false,
+                        results = new BatchToolResult[0],
+                        error = "Failed to deserialize request JSON"
+                    };
+                    SendJson(context.Response, errorResponse);
+                    return;
+                }
+
                 if (request.calls == null || request.calls.Length == 0)
                 {
-                    SendError(context.Response, 400, "calls array is required and must not be empty");
+                    var errorResponse = new BatchExecuteResponse
+                    {
+                        success = false,
+                        results = new BatchToolResult[0],
+                        error = "calls array is required and must not be empty"
+                    };
+                    SendJson(context.Response, errorResponse);
                     return;
                 }
 
                 if (request.calls.Length > 50)
                 {
-                    SendError(context.Response, 400, "Maximum 50 tool calls per batch");
+                    var errorResponse = new BatchExecuteResponse
+                    {
+                        success = false,
+                        results = new BatchToolResult[0],
+                        error = "Maximum 50 tool calls per batch"
+                    };
+                    SendJson(context.Response, errorResponse);
                     return;
                 }
 
