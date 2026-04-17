@@ -1,0 +1,29 @@
+# Python
+mcp-server/.venv/
+mcp-server/__pycache__/
+mcp-server/**/__pycache__/
+mcp-server/**/*.py[cod]
+mcp-server/**/*.egg-info/
+mcp-server/dist/
+mcp-server/build/
+mcp-server/.eggs/
+mcp-server/.coverage
+mcp-server/.pytest_cache/
+mcp-server/htmlcov/
+
+# Environment
+.env
+.env.*
+
+# Unity generated
+unity-bridge/Library/
+unity-bridge/Temp/
+unity-bridge/Obj/
+unity-bridge/Logs/
+unity-bridge/UserSettings/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.DS_Store

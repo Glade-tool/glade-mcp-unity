@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gladekit-unity": {
+      "command": "python",
+      "args": ["-m", "gladekit_mcp"]
+    }
+  }
+}

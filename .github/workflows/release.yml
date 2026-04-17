@@ -1,0 +1,129 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  # ── 1. Run tests ─────────────────────────────────────────────────────────────
+  test:
+    name: Test Python package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        working-directory: mcp-server
+        run: uv sync --extra dev
+
+      - name: Lint
+        working-directory: mcp-server
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Run tests
+        working-directory: mcp-server
+        run: uv run pytest tests/ -v
+
+  # ── 2. Publish to PyPI ───────────────────────────────────────────────────────
+  pypi:
+    name: Publish to PyPI
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # for trusted publishing (no API token needed)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Build wheel
+        working-directory: mcp-server
+        run: uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: mcp-server/dist/
+
+  # ── 3. Bump unity-bridge version ─────────────────────────────────────────────
+  unity-bridge-version:
+    name: Sync unity-bridge package.json version
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Update unity-bridge/package.json version
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          jq --arg v "$VERSION" '.version = $v' unity-bridge/package.json > tmp.json
+          mv tmp.json unity-bridge/package.json
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add unity-bridge/package.json
+          git diff --staged --quiet || git commit -m "chore: bump unity-bridge version to ${{ steps.version.outputs.VERSION }}"
+          git push
+
+  # ── 4. Create GitHub release ─────────────────────────────────────────────────
+  github-release:
+    name: Create GitHub Release
+    needs: [pypi, unity-bridge-version]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "GladeKit MCP v${{ steps.version.outputs.VERSION }}"
+          body: |
+            ## Installation
+
+            **MCP server (Python):**
+            ```bash
+            uvx gladekit-mcp
+            # or: pip install gladekit-mcp
+            ```
+
+            **Unity bridge (UPM):**
+            ```
+            https://github.com/gladekit/gladekit-mcp.git?path=/unity-bridge#v${{ steps.version.outputs.VERSION }}
+            ```
+
+            See the [README](README.md) for full setup instructions.
+          generate_release_notes: true

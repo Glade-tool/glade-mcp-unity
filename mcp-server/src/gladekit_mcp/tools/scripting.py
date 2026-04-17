@@ -1,0 +1,313 @@
+"""
+Scripting category tools — C# scripts, assets, folders, ScriptableObjects.
+"""
+
+from typing import List, Dict
+
+CATEGORY = {
+    "name": "scripting",
+    "display_name": "Scripting & Assets",
+    "keywords": [
+        "script",
+        "code",
+        "class",
+        "c#",
+        "csharp",
+        "asset",
+        "folder",
+        "file",
+        "scriptable",
+        "monobehaviour",
+        "shader",
+        "compute",
+    ],
+}
+
+TOOLS: List[Dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "create_script",
+            "description": "Create a new text-based asset file (.cs, .shader, .compute, .hlsl, etc.). Extension determines asset type. Use when the file does NOT exist; use modify_script if it already exists. IMPORTANT: After creating a .cs script, you MUST call compile_scripts and wait for status='idle' BEFORE calling add_component with the new type — otherwise the type won't be found.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scriptPath": {
+                        "type": "string",
+                        "description": "Path relative to Assets folder with file extension (e.g., 'Scripts/MyScript.cs', 'Shaders/MyShader.shader', 'Shaders/MyCompute.compute'). The extension determines the asset type. Will create the directory if needed. Default to 'Scripts/' if no specific path is provided. Follow the project's existing folder structure when possible.",
+                    },
+                    "scriptContent": {
+                        "type": "string",
+                        "description": "Complete file content. For .cs files: C# script code with all required using statements, null checks, and proper Unity patterns. For .shader files: HLSL/CG shader code with Shader declaration, Properties, SubShader, and Pass blocks. For other file types: appropriate content for that asset type.",
+                    },
+                },
+                "required": ["scriptPath", "scriptContent"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "modify_script",
+            "description": "Modify an existing text-based asset file (.cs, .shader, .compute, etc.). File MUST exist in the project — verify in Unity context first. Provide the complete file content including all existing code.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scriptPath": {
+                        "type": "string",
+                        "description": "Path relative to Assets folder with file extension (e.g., 'Scripts/MyScript.cs', 'Shaders/MyShader.shader'). MUST match exactly a path shown in the Unity context. If the file is not listed in context, it doesn't exist - use create_script instead. Follow the project's existing folder structure.",
+                    },
+                    "scriptContent": {
+                        "type": "string",
+                        "description": "Complete modified file content. MUST include ALL existing code from the context, then ADD your changes. Never remove existing fields, methods, or functionality. For .cs files: complete C# script code. For .shader files: complete HLSL/CG shader code.",
+                    },
+                },
+                "required": ["scriptPath", "scriptContent"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_script_content",
+            "description": "Read the full content of a text-based asset file by path (e.g., 'Assets/Scripts/PlayerMovement.cs', 'Assets/Shaders/MyShader.shader'). Supports .cs (C# scripts), .shader (HLSL/CG shaders), .compute (compute shaders), .hlsl, .cginc, and other text-based Unity assets. Use this when the user asks to fix or update a specific script or shader.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scriptPath": {
+                        "type": "string",
+                        "description": "Path to the file with extension (relative to Assets, e.g., 'Scripts/MyScript.cs' or 'Shaders/MyShader.shader').",
+                    }
+                },
+                "required": ["scriptPath"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_scripts",
+            "description": "Find scripts by name (returns script paths). Use when you need to locate a script by partial name before reading it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nameContains": {
+                        "type": "string",
+                        "description": "Substring to match script file names.",
+                    },
+                    "maxResults": {
+                        "type": "integer",
+                        "description": "Max results (1-100). Default: 20",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_scripts",
+            "description": "Search script contents for a query string and return matching script paths. Use sparingly for troubleshooting or when the target script name is unknown.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Text to search for in scripts.",
+                    },
+                    "maxResults": {
+                        "type": "integer",
+                        "description": "Max results (1-100). Default: 10",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compile_scripts",
+            "description": "Check Unity script compilation status. Call this after create_script or modify_script. Returns isCompiling (bool) and status ('compiling' or 'idle'). If still compiling, call again. When compilation finishes with errors, returns hasErrors=true plus each error's file path, line number, and ±10 lines of source context — use that context to fix the script before retrying.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_folder",
+            "description": "Create a folder in the Assets directory. Creates parent folders if needed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "folderPath": {
+                        "type": "string",
+                        "description": "Path relative to Assets folder (e.g., 'Prefabs/Enemies' creates Assets/Prefabs/Enemies)",
+                    }
+                },
+                "required": ["folderPath"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "move_asset",
+            "description": "Move an asset to a new location in the project.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sourcePath": {
+                        "type": "string",
+                        "description": "Current path of the asset (e.g., 'Materials/Old/MyMaterial.mat')",
+                    },
+                    "destinationPath": {
+                        "type": "string",
+                        "description": "New path for the asset (e.g., 'Materials/New/MyMaterial.mat')",
+                    },
+                },
+                "required": ["sourcePath", "destinationPath"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "duplicate_asset",
+            "description": "Duplicate an asset in the project.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sourcePath": {
+                        "type": "string",
+                        "description": "Path of the asset to duplicate",
+                    },
+                    "destinationPath": {
+                        "type": "string",
+                        "description": "Path for the duplicate (if not provided, adds '_copy' suffix)",
+                    },
+                },
+                "required": ["sourcePath"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_asset",
+            "description": "Delete an asset from the project. Use with caution!",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "assetPath": {
+                        "type": "string",
+                        "description": "Path of the asset to delete",
+                    }
+                },
+                "required": ["assetPath"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_assets",
+            "description": "List assets in the project by type and/or name filter. Use nameContains to narrow results. Returns filenames in message.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "assetType": {
+                        "type": "string",
+                        "description": "Type filter: 'Material', 'Prefab', 'Texture', 'AudioClip', 'AnimationClip', 'AnimatorController', 'Scene', 'Script', or 'All'",
+                    },
+                    "nameContains": {
+                        "type": "string",
+                        "description": "Optional: Filter by name containing this string (RECOMMENDED to narrow results)",
+                    },
+                    "folderPath": {
+                        "type": "string",
+                        "description": "Optional: Limit search to this folder (e.g., 'Prefabs/Enemies')",
+                    },
+                    "maxResults": {
+                        "type": "integer",
+                        "description": "Optional: Max results. Default: 20, Max: 50",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_scriptable_object",
+            "description": "Create a ScriptableObject asset from a script class. The script must inherit from ScriptableObject and be compiled. Use this to create data assets like PetDefinition, ItemData, GameSettings, etc. The asset path should end with .asset (e.g., 'Assets/Content/Pets/Definitions/Pet_Mossi.asset').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "assetPath": {
+                        "type": "string",
+                        "description": "Path where the ScriptableObject asset will be created (e.g., 'Assets/Content/Pets/Definitions/Pet_Mossi.asset'). The .asset extension will be added if missing.",
+                    },
+                    "scriptTypeName": {
+                        "type": "string",
+                        "description": "Name of the ScriptableObject class (e.g., 'PetDefinition', 'ItemData'). Can be just the class name or fully qualified (e.g., 'MyNamespace.PetDefinition'). The script must exist and inherit from ScriptableObject.",
+                    },
+                },
+                "required": ["assetPath", "scriptTypeName"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_scriptable_object_property",
+            "description": "Set a property on a ScriptableObject asset. Supports primitives, Vector3/Color/Quaternion, enums (provide enum name as string), and asset references (provide asset path). For List<T>/arrays, use appendToList=true to append instead of replace.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "assetPath": {
+                        "type": "string",
+                        "description": "Path to the ScriptableObject asset (e.g., 'Assets/Content/Pets/Definitions/Pet_Mossi.asset')",
+                    },
+                    "propertyName": {
+                        "type": "string",
+                        "description": "Name of the property or field to set (e.g., 'PetId', 'DisplayName', 'Portrait', 'Prefab', 'petDefinitions', 'myEnumField'). For enum dropdowns, provide the enum name. For lists, use appendToList=true to append items.",
+                    },
+                    "value": {
+                        "type": "string",
+                        "description": "Value to set (will be converted to appropriate type). For enums (dropdowns), provide the enum value name as a string (e.g., 'MyEnumValue'). For asset references, provide the asset path. For lists with appendToList=true, can be a single item or JSON array like '[item1, item2]'.",
+                    },
+                    "appendToList": {
+                        "type": "boolean",
+                        "description": "If true and the property is a List<T> or array, append the value(s) to the existing list instead of replacing it. This safely preserves existing items and supports undo/redo. Default: false.",
+                        "default": False,
+                    },
+                },
+                "required": ["assetPath", "propertyName", "value"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_asset_exists",
+            "description": "Check if an asset exists at a path (case-insensitive). Returns similar paths if not found. When false, immediately call the corresponding create tool in the same response — this is a verification step, not a stopping point.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "assetPath": {
+                        "type": "string",
+                        "description": "Path relative to Assets folder (e.g., 'Materials/MyMaterial.mat', 'Prefabs/Cube.prefab', 'Textures/Logo.png')",
+                    }
+                },
+                "required": ["assetPath"],
+            },
+        },
+    },
+]

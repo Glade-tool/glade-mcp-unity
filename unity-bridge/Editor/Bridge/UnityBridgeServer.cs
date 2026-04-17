@@ -1,0 +1,1545 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Text;
+using System.Threading;
+using UnityEditor;
+using UnityEditor.Compilation;
+using UnityEngine;
+using GladeAgenticAI.Services;
+using GladeAgenticAI.Bridge;
+using GladeAgenticAI.Core.Tools;
+
+namespace GladeAgenticAI.Bridge
+{
+    /// <summary>
+    /// HTTP server that exposes Unity tool execution and context gathering via REST API.
+    /// Runs on localhost:8765 and processes requests on Unity main thread.
+    /// </summary>
+    [InitializeOnLoad]
+    public static class UnityBridgeServer
+    {
+        private static HttpListener _listener;
+        private static Thread _listenerThread;
+        private static bool _isRunning = false;
+        private static readonly Queue<HttpListenerContext> _requestQueue = new Queue<HttpListenerContext>();
+        private static DateTime _lastRequestTime = DateTime.MinValue;
+        private const int Port = 8765;
+        private static readonly string BaseUrl = $"http://localhost:{Port}/";
+
+        // Console watcher: main-thread-only event list + dedup tracking
+        private static readonly List<ConsoleLogEvent> _pendingLogEvents = new List<ConsoleLogEvent>();
+        private static readonly Dictionary<string, int> _logDedupCounts = new Dictionary<string, int>();
+        private const int MaxPendingLogEvents = 50;
+
+        private struct ConsoleLogEvent
+        {
+            public string message;
+            public string stackTrace;
+            public string logType;
+            public double timestamp;
+        }
+        private const double ConnectionTimeoutSeconds = 10.0; // Consider disconnected if no request in 10 seconds
+        private static int _compilationCount = 0;
+
+        // Tool call tracking (exposed to GladeKitMCPWindow)
+        private static int _toolCallCount = 0;
+        private static string _lastToolCalled = null;
+
+        /// <summary>Whether the bridge HTTP server is currently running.</summary>
+        public static bool IsRunning => _isRunning;
+
+        /// <summary>Number of tool calls executed this session.</summary>
+        public static int ToolCallCount => _toolCallCount;
+
+        /// <summary>Name of the last tool that was called, or null if none.</summary>
+        public static string LastToolCalled => _lastToolCalled;
+
+        static UnityBridgeServer()
+        {
+            EditorApplication.update += ProcessRequests;
+            CompilationPipeline.compilationFinished -= OnCompilationFinished;
+            CompilationPipeline.compilationFinished += OnCompilationFinished;
+            // Console watcher: subscribe on background thread, marshal events to main thread via delayCall
+            Application.logMessageReceivedThreaded -= OnLogMessageReceived;
+            Application.logMessageReceivedThreaded += OnLogMessageReceived;
+            StartServer();
+        }
+
+        /// <summary>
+        /// Called on arbitrary threads when Unity logs a message. Marshal to main thread for safe queue access.
+        /// </summary>
+        private static void OnLogMessageReceived(string condition, string stackTrace, LogType type)
+        {
+            // Only capture errors and exceptions
+            if (type != LogType.Error && type != LogType.Exception) return;
+
+            string dedupKey = condition; // Dedup by message text only — NOT stacktrace (line numbers change after recompile)
+            string logTypeName = type.ToString();
+            double ts = (DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
+
+            EditorApplication.delayCall += () =>
+            {
+                lock (_pendingLogEvents)
+                {
+                    if (_logDedupCounts.TryGetValue(dedupKey, out int count))
+                    {
+                        _logDedupCounts[dedupKey] = count + 1;
+                        return; // Already queued; just increment count, don't add duplicate
+                    }
+                    _logDedupCounts[dedupKey] = 1;
+
+                    if (_pendingLogEvents.Count >= MaxPendingLogEvents)
+                        return; // Queue full — drop this event
+
+                    _pendingLogEvents.Add(new ConsoleLogEvent
+                    {
+                        message = condition,
+                        stackTrace = stackTrace,
+                        logType = logTypeName,
+                        timestamp = ts,
+                    });
+                }
+            };
+        }
+
+        private static void OnCompilationFinished(object obj)
+        {
+            _compilationCount++;
+        }
+
+        /// <summary>
+        /// Start the HTTP server on a background thread
+        /// </summary>
+        public static void StartServer()
+        {
+            if (_isRunning)
+            {
+                Debug.Log("[UnityBridge] Server already running");
+                return;
+            }
+
+            try
+            {
+                _listener = new HttpListener();
+                _listener.Prefixes.Add(BaseUrl);
+                _listener.Start();
+                _isRunning = true;
+
+                _listenerThread = new Thread(ListenForRequests)
+                {
+                    IsBackground = true,
+                    Name = "UnityBridgeServer"
+                };
+                _listenerThread.Start();
+                
+                Debug.Log($"[UnityBridge] ✅ Server started successfully on {BaseUrl}");
+                Debug.Log($"[UnityBridge] 📋 Ready to accept requests. Tools list endpoint: {BaseUrl}api/tools/list");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Failed to start server: {e.Message}");
+                _isRunning = false;
+            }
+        }
+
+        /// <summary>
+        /// Stop the HTTP server
+        /// </summary>
+        public static void StopServer()
+        {
+            if (!_isRunning)
+                return;
+
+            _isRunning = false;
+            _listener?.Stop();
+            _listener?.Close();
+            _listener = null;
+
+            Debug.Log("[UnityBridge] Server stopped");
+        }
+
+        /// <summary>
+        /// Background thread that accepts HTTP connections
+        /// </summary>
+        private static void ListenForRequests()
+        {
+            while (_isRunning && _listener != null && _listener.IsListening)
+            {
+                try
+                {
+                    var context = _listener.GetContext();
+                    lock (_requestQueue)
+                    {
+                        _requestQueue.Enqueue(context);
+                    }
+                }
+                catch (HttpListenerException)
+                {
+                    // Server stopped
+                    break;
+                }
+                catch (System.Threading.ThreadAbortException)
+                {
+                    // Unity domain reload - expected, exit quietly
+                    // ThreadAbortException automatically re-throws, but we're breaking anyway
+                    break;
+                }
+                catch (Exception e)
+                {
+                    // Check if this is a thread abort (Unity domain reload)
+                    // ThreadAbortException message often contains "Thread was being aborted"
+                    if (e is System.Threading.ThreadAbortException || 
+                        e.Message.Contains("Thread was being aborted", System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Unity domain reload - expected, exit quietly
+                        break;
+                    }
+                    
+                    // Only log other errors if not shutting down
+                    if (_isRunning)
+                    {
+                        Debug.LogError($"[UnityBridge] Error accepting request: {e.Message}");
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Process queued requests on Unity main thread (called via EditorApplication.update)
+        /// </summary>
+        private static void ProcessRequests()
+        {
+            if (!_isRunning)
+                return;
+
+            lock (_requestQueue)
+            {
+                while (_requestQueue.Count > 0)
+                {
+                    var context = _requestQueue.Dequeue();
+                    HandleRequest(context);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Handle an HTTP request
+        /// </summary>
+        private static void HandleRequest(HttpListenerContext context)
+        {
+            var request = context.Request;
+            var response = context.Response;
+
+            // Add CORS headers for Electron app
+            response.AddHeader("Access-Control-Allow-Origin", "*");
+            response.AddHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            response.AddHeader("Access-Control-Allow-Headers", "Content-Type");
+
+            // Handle preflight OPTIONS request
+            if (request.HttpMethod == "OPTIONS")
+            {
+                response.StatusCode = 200;
+                response.Close();
+                return;
+            }
+
+            // Update last request time for all requests (including health checks from Electron app)
+            // This tracks when the Electron app last communicated with Unity
+            _lastRequestTime = DateTime.Now;
+            
+            string path = request.Url.AbsolutePath;
+
+            try
+            {
+                string method = request.HttpMethod;
+
+                if (path == "/api/health" && method == "GET")
+                {
+                    HandleHealth(context);
+                }
+                else if (path == "/api/compilation/status" && method == "GET")
+                {
+                    HandleCompilationStatus(context);
+                }
+                else if (path == "/api/tools/execute" && method == "POST")
+                {
+                    HandleToolExecute(context);
+                }
+                else if (path == "/api/batch" && method == "POST")
+                {
+                    HandleBatchExecute(context);
+                }
+                else if (path == "/api/context/gather" && method == "POST")
+                {
+                    HandleContextGather(context);
+                }
+                else if (path == "/api/scripts/list" && method == "GET")
+                {
+                    HandleScriptList(context);
+                }
+                else if (path == "/api/scripts/content" && method == "POST")
+                {
+                    HandleScriptContent(context);
+                }
+                else if (path == "/api/settings" && method == "POST")
+                {
+                    HandleSettings(context);
+                }
+                else if (path == "/api/assets/list" && method == "GET")
+                {
+                    HandleAssetList(context);
+                }
+                else if (path == "/api/file/backup" && method == "POST")
+                {
+                    HandleFileBackup(context);
+                }
+                else if (path == "/api/gameobject/backup" && method == "POST")
+                {
+                    HandleGameObjectBackup(context);
+                }
+                else if (path == "/api/backup/exists" && method == "POST")
+                {
+                    HandleBackupExists(context);
+                }
+                else if (path == "/api/turn/revert" && method == "POST")
+                {
+                    HandleTurnRevert(context);
+                }
+                else if (path == "/api/turn/accept" && method == "POST")
+                {
+                    HandleTurnAccept(context);
+                }
+                else if (path == "/api/errors/context" && method == "GET")
+                {
+                    HandleGetErrorContext(context);
+                }
+                else if (path == "/api/console/events" && method == "GET")
+                {
+                    HandleConsoleEvents(context);
+                }
+                else if (path == "/api/tools/list" && method == "GET")
+                {
+                    HandleToolsList(context);
+                }
+                else
+                {
+                    SendError(response, 404, "Not Found");
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Error handling request: {e}");
+                SendError(response, 500, $"Internal Server Error: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Handle GET /api/health
+        /// </summary>
+        private static void HandleHealth(HttpListenerContext context)
+        {
+            var response = new HealthResponse
+            {
+                status = "ok",
+                unityVersion = Application.unityVersion,
+                projectName = Application.productName,
+                projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..")),
+                isCompiling = EditorApplication.isCompiling
+            };
+
+            SendJson(context.Response, response);
+        }
+
+        /// <summary>
+        /// Handle GET /api/compilation/status
+        /// </summary>
+        private static void HandleCompilationStatus(HttpListenerContext context)
+        {
+            bool isCompiling = EditorApplication.isCompiling;
+            var response = new CompilationStatusResponse
+            {
+                isCompiling = isCompiling,
+                status = isCompiling ? "compiling" : "idle",
+                compilationCount = _compilationCount
+            };
+
+            SendJson(context.Response, response);
+        }
+
+        /// <summary>
+        /// Handle GET /api/tools/list
+        /// </summary>
+        private static void HandleToolsList(HttpListenerContext context)
+        {
+            try
+            {
+                var registry = new ToolRegistry();
+                var toolNames = registry.GetAllToolNames();
+                
+                Debug.Log($"[UnityBridge] 📋 GET /api/tools/list - Request received");
+                Debug.Log($"[UnityBridge] 📋 Returning {toolNames.Count} registered tools");
+                
+                var response = new ToolsListResponse
+                {
+                    success = true,
+                    toolNames = toolNames.ToArray(),
+                    error = null
+                };
+
+                SendJson(context.Response, response);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Error in /api/tools/list: {e.Message}");
+                var response = new ToolsListResponse
+                {
+                    success = false,
+                    toolNames = new string[0],
+                    error = e.Message
+                };
+                SendJson(context.Response, response);
+            }
+        }
+
+        /// <summary>
+        /// Handle POST /api/tools/execute
+        /// </summary>
+        private static void HandleToolExecute(HttpListenerContext context)
+        {
+            try
+            {
+                string requestBody = ReadRequestBody(context.Request);
+                var request = JsonUtility.FromJson<ToolExecuteRequest>(requestBody);
+
+                if (string.IsNullOrEmpty(request.toolName))
+                {
+                    SendError(context.Response, 400, "toolName is required");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(request.arguments))
+                {
+                    request.arguments = "{}";
+                }
+
+                // Check if Unity is compiling
+                if (EditorApplication.isCompiling)
+                {
+                    var response = new ToolExecuteResponse
+                    {
+                        success = false,
+                        result = "",
+                        requiresCompilation = true,
+                        error = "Unity is currently compiling. Please wait for compilation to finish."
+                    };
+                    SendJson(context.Response, response);
+                    return;
+                }
+
+                // Execute the tool
+                string result = ToolExecutor.ExecuteTool(request.toolName, request.arguments);
+                _toolCallCount++;
+                _lastToolCalled = request.toolName;
+
+                // Check if tool requires compilation (based on tool name)
+                bool requiresCompilation = ToolRequiresCompilation(request.toolName);
+
+                var toolResponse = new ToolExecuteResponse
+                {
+                    success = true,
+                    result = result,
+                    requiresCompilation = requiresCompilation,
+                    compilationCount = requiresCompilation ? _compilationCount : -1,
+                    error = null
+                };
+
+                SendJson(context.Response, toolResponse);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Tool execution error: {e}");
+                var errorResponse = new ToolExecuteResponse
+                {
+                    success = false,
+                    result = "",
+                    requiresCompilation = false,
+                    error = e.Message
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Handle POST /api/batch — execute multiple tools in a single request.
+        /// Collect-all error model: partial failures are returned per-result so
+        /// the AI can see which steps succeeded and retry only the failed ones.
+        /// </summary>
+        private static void HandleBatchExecute(HttpListenerContext context)
+        {
+            try
+            {
+                string requestBody = ReadRequestBody(context.Request);
+                var request = JsonUtility.FromJson<BatchExecuteRequest>(requestBody);
+
+                if (request.calls == null || request.calls.Length == 0)
+                {
+                    SendError(context.Response, 400, "calls array is required and must not be empty");
+                    return;
+                }
+
+                if (request.calls.Length > 50)
+                {
+                    SendError(context.Response, 400, "Maximum 50 tool calls per batch");
+                    return;
+                }
+
+                // Check if Unity is compiling
+                if (EditorApplication.isCompiling)
+                {
+                    var compileResponse = new BatchExecuteResponse
+                    {
+                        success = false,
+                        results = new BatchToolResult[0],
+                        error = "Unity is currently compiling. Please wait for compilation to finish."
+                    };
+                    SendJson(context.Response, compileResponse);
+                    return;
+                }
+
+                var results = new BatchToolResult[request.calls.Length];
+                bool anyRequiresCompilation = false;
+
+                for (int i = 0; i < request.calls.Length; i++)
+                {
+                    var call = request.calls[i];
+                    var toolResult = new BatchToolResult();
+                    toolResult.toolName = call.toolName;
+
+                    if (string.IsNullOrEmpty(call.toolName))
+                    {
+                        toolResult.success = false;
+                        toolResult.error = "toolName is required";
+                        results[i] = toolResult;
+                        continue;
+                    }
+
+                    string args = string.IsNullOrEmpty(call.arguments) ? "{}" : call.arguments;
+
+                    try
+                    {
+                        string result = ToolExecutor.ExecuteTool(call.toolName, args);
+                        _toolCallCount++;
+                        _lastToolCalled = call.toolName;
+
+                        toolResult.success = true;
+                        toolResult.result = result;
+                        toolResult.requiresCompilation = ToolRequiresCompilation(call.toolName);
+                        if (toolResult.requiresCompilation)
+                            anyRequiresCompilation = true;
+                    }
+                    catch (Exception e)
+                    {
+                        toolResult.success = false;
+                        toolResult.error = e.Message;
+                    }
+
+                    results[i] = toolResult;
+                }
+
+                var batchResponse = new BatchExecuteResponse
+                {
+                    success = true,
+                    results = results,
+                    error = null
+                };
+                SendJson(context.Response, batchResponse);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Batch execution error: {e}");
+                var errorResponse = new BatchExecuteResponse
+                {
+                    success = false,
+                    results = new BatchToolResult[0],
+                    error = e.Message
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Handle POST /api/context/gather
+        /// </summary>
+        private static void HandleContextGather(HttpListenerContext context)
+        {
+            try
+            {
+                string requestBody = ReadRequestBody(context.Request);
+                var request = JsonUtility.FromJson<ContextGatherRequest>(requestBody);
+
+                // Build context options
+                var options = new UnityContextGatherer.ContextOptions
+                {
+                    includeProjectInfo = request.includeProjectInfo,
+                    includeSelection = request.includeSelection,
+                    includeSceneSummary = request.includeSceneSummary,
+                    includeSceneHierarchy = request.includeSceneHierarchy,
+                    includeScriptsList = request.includeScriptsList,
+                    includeScriptsContent = request.includeScriptsContent,
+                    includePackages = request.includePackages,
+                    includeErrors = request.includeErrors,
+                    includeCameras = request.includeCameras,
+                    sceneMaxDepth = request.sceneMaxDepth,
+                    maxScriptBytes = request.maxScriptBytes
+                };
+
+                // Gather context data
+                var data = UnityContextGatherer.GatherRawData(options);
+                string contextJson = JsonUtility.ToJson(data);
+                string projectHash = UnityContextGatherer.GetProjectHash();
+
+                var response = new ContextGatherResponse
+                {
+                    success = true,
+                    projectHash = projectHash,
+                    context = contextJson,
+                    error = null
+                };
+
+                SendJson(context.Response, response);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Context gather error: {e}");
+                var errorResponse = new ContextGatherResponse
+                {
+                    success = false,
+                    projectHash = "",
+                    context = "",
+                    error = e.Message
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Handle GET /api/scripts/list
+        /// </summary>
+        private static void HandleScriptList(HttpListenerContext context)
+        {
+            try
+            {
+                var scriptGuids = AssetDatabase.FindAssets("t:MonoScript");
+                var scripts = new List<ScriptInfo>();
+
+                foreach (var guid in scriptGuids)
+                {
+                    string fullPath = AssetDatabase.GUIDToAssetPath(guid);
+                    
+                    // Skip editor scripts in Packages folder
+                    if (fullPath.StartsWith("Packages/"))
+                        continue;
+                    
+                    // Skip meta files
+                    if (fullPath.EndsWith(".meta"))
+                        continue;
+
+                    string path = fullPath;
+                    if (path.StartsWith("Assets/"))
+                        path = path.Substring(7); // Remove "Assets/" prefix
+
+                    string name = Path.GetFileNameWithoutExtension(fullPath);
+
+                    scripts.Add(new ScriptInfo
+                    {
+                        path = path,
+                        name = name,
+                        fullPath = fullPath
+                    });
+                }
+
+                var response = new ScriptListResponse
+                {
+                    success = true,
+                    scripts = scripts.ToArray(),
+                    error = null
+                };
+
+                SendJson(context.Response, response);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Script list error: {e}");
+                var errorResponse = new ScriptListResponse
+                {
+                    success = false,
+                    scripts = new ScriptInfo[0],
+                    error = e.Message
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Handle POST /api/scripts/content - Get content of multiple scripts
+        /// </summary>
+        private static void HandleScriptContent(HttpListenerContext context)
+        {
+            try
+            {
+                string requestBody = ReadRequestBody(context.Request);
+                var request = JsonUtility.FromJson<ScriptContentRequest>(requestBody);
+                
+                var scriptItems = new List<ScriptContentItem>();
+                
+                if (request.paths != null)
+                {
+                    foreach (var path in request.paths)
+                    {
+                        var item = new ScriptContentItem
+                        {
+                            path = path,
+                            name = Path.GetFileNameWithoutExtension(path),
+                            success = false
+                        };
+                        
+                        try
+                        {
+                            // Construct full path
+                            string fullPath = path;
+                            if (!path.StartsWith("Assets/"))
+                            {
+                                fullPath = "Assets/" + path;
+                            }
+                            
+                            // Read file content
+                            string absolutePath = Path.Combine(Application.dataPath, "..", fullPath);
+                            if (File.Exists(absolutePath))
+                            {
+                                item.content = File.ReadAllText(absolutePath);
+                                item.success = true;
+                            }
+                            else
+                            {
+                                item.error = "File not found";
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            item.error = e.Message;
+                        }
+                        
+                        scriptItems.Add(item);
+                    }
+                }
+                
+                var response = new ScriptContentResponse
+                {
+                    success = true,
+                    scripts = scriptItems.ToArray(),
+                    error = null
+                };
+                
+                SendJson(context.Response, response);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Script content error: {e}");
+                var errorResponse = new ScriptContentResponse
+                {
+                    success = false,
+                    scripts = new ScriptContentItem[0],
+                    error = e.Message
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Handle GET /api/assets/list
+        /// </summary>
+        private static void HandleAssetList(HttpListenerContext context)
+        {
+            try
+            {
+                var assets = new List<AssetInfo>();
+                
+                // Get query parameter for asset type filter (optional)
+                string typeFilter = context.Request.QueryString["type"]; // e.g., "Prefab", "Material", "Texture2D"
+                
+                string searchQuery = "t:Object";
+                if (!string.IsNullOrEmpty(typeFilter))
+                {
+                    searchQuery = $"t:{typeFilter}";
+                }
+
+                var guids = AssetDatabase.FindAssets(searchQuery);
+
+                foreach (var guid in guids)
+                {
+                    string fullPath = AssetDatabase.GUIDToAssetPath(guid);
+                    
+                    // Skip Packages folder
+                    if (fullPath.StartsWith("Packages/"))
+                        continue;
+                    
+                    // Skip meta files
+                    if (fullPath.EndsWith(".meta"))
+                        continue;
+                    
+                    // Skip scripts (handled separately)
+                    if (fullPath.EndsWith(".cs"))
+                        continue;
+
+                    string path = fullPath;
+                    if (path.StartsWith("Assets/"))
+                        path = path.Substring(7); // Remove "Assets/" prefix
+
+                    string name = Path.GetFileNameWithoutExtension(fullPath);
+                    string type = AssetDatabase.GetMainAssetTypeAtPath(fullPath)?.Name ?? "Object";
+
+                    assets.Add(new AssetInfo
+                    {
+                        path = path,
+                        name = name,
+                        type = type,
+                        fullPath = fullPath
+                    });
+                }
+
+                var response = new AssetListResponse
+                {
+                    success = true,
+                    assets = assets.ToArray(),
+                    error = null
+                };
+
+                SendJson(context.Response, response);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Asset list error: {e}");
+                var errorResponse = new AssetListResponse
+                {
+                    success = false,
+                    assets = new AssetInfo[0],
+                    error = e.Message
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Handle GET /api/errors/context
+        /// </summary>
+        private static void HandleGetErrorContext(HttpListenerContext context)
+        {
+            try
+            {
+                string errorContext = ErrorTracker.GetAllErrorContext();
+                var response = new ErrorContextResponse
+                {
+                    success = true,
+                    errorContext = errorContext,
+                    error = null
+                };
+                SendJson(context.Response, response);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Error context error: {e}");
+                var errorResponse = new ErrorContextResponse
+                {
+                    success = false,
+                    errorContext = "",
+                    error = e.Message
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Handle GET /api/console/events — returns and clears pending error/exception log events.
+        /// NOTE: This handler runs on the HttpListener background thread.
+        /// _pendingLogEvents is only written from the main thread (via EditorApplication.delayCall),
+        /// but drained here. Use a lock for thread-safe drain.
+        /// </summary>
+        private static void HandleConsoleEvents(HttpListenerContext context)
+        {
+            List<ConsoleLogEvent> snapshot;
+            lock (_pendingLogEvents)
+            {
+                snapshot = new List<ConsoleLogEvent>(_pendingLogEvents);
+                _pendingLogEvents.Clear();
+                _logDedupCounts.Clear();
+            }
+
+            var events = new List<object>();
+            foreach (var evt in snapshot)
+            {
+                events.Add(new
+                {
+                    message = evt.message,
+                    stackTrace = evt.stackTrace,
+                    logType = evt.logType,
+                    timestamp = evt.timestamp,
+                });
+            }
+
+            SendJson(context.Response, new { events });
+        }
+
+        /// <summary>
+        /// Handle POST /api/file/backup
+        /// </summary>
+        private static void HandleFileBackup(HttpListenerContext context)
+        {
+            try
+            {
+                string requestBody = ReadRequestBody(context.Request);
+                var request = JsonUtility.FromJson<FileBackupRequest>(requestBody);
+                
+                if (string.IsNullOrEmpty(request.filePath) || string.IsNullOrEmpty(request.turnId))
+                {
+                    var errorResponse = new FileBackupResponse
+                    {
+                        success = false,
+                        backupPath = "",
+                        error = "filePath and turnId are required"
+                    };
+                    SendJson(context.Response, errorResponse);
+                    return;
+                }
+                
+                string filePath = request.filePath;
+                if (!filePath.StartsWith("Assets/"))
+                {
+                    filePath = "Assets/" + filePath;
+                }
+                
+                if (!File.Exists(filePath))
+                {
+                    var errorResponse = new FileBackupResponse
+                    {
+                        success = false,
+                        backupPath = "",
+                        error = $"File not found: {filePath}"
+                    };
+                    SendJson(context.Response, errorResponse);
+                    return;
+                }
+                
+                // Create backup path
+                string backupDir = Path.Combine(".gladekit-backups", $"turn-{request.turnId}", "files");
+                string relativePath = filePath.Replace("Assets/", "");
+                string backupPath = Path.Combine(backupDir, relativePath);
+                string backupDirPath = Path.GetDirectoryName(backupPath);
+                
+                if (!Directory.Exists(backupDirPath))
+                {
+                    Directory.CreateDirectory(backupDirPath);
+                }
+                
+                // Copy file
+                File.Copy(filePath, backupPath, true);
+                
+                // Also backup .meta file if it exists
+                string metaPath = filePath + ".meta";
+                if (File.Exists(metaPath))
+                {
+                    File.Copy(metaPath, backupPath + ".meta", true);
+                }
+                
+                var response = new FileBackupResponse
+                {
+                    success = true,
+                    backupPath = backupPath,
+                    error = null
+                };
+                
+                SendJson(context.Response, response);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] File backup error: {e}");
+                var errorResponse = new FileBackupResponse
+                {
+                    success = false,
+                    backupPath = "",
+                    error = e.Message
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Handle POST /api/gameobject/backup
+        /// </summary>
+        private static void HandleGameObjectBackup(HttpListenerContext context)
+        {
+            try
+            {
+                string requestBody = ReadRequestBody(context.Request);
+                var request = JsonUtility.FromJson<GameObjectBackupRequest>(requestBody);
+                
+                if (string.IsNullOrEmpty(request.gameObjectPath) || string.IsNullOrEmpty(request.turnId))
+                {
+                    var errorResponse = new GameObjectBackupResponse
+                    {
+                        success = false,
+                        backupPath = "",
+                        error = "gameObjectPath and turnId are required"
+                    };
+                    SendJson(context.Response, errorResponse);
+                    return;
+                }
+                
+                GameObject obj = ToolUtils.FindGameObjectByPath(request.gameObjectPath);
+                if (obj == null)
+                {
+                    var errorResponse = new GameObjectBackupResponse
+                    {
+                        success = false,
+                        backupPath = "",
+                        error = $"GameObject not found: {request.gameObjectPath}"
+                    };
+                    SendJson(context.Response, errorResponse);
+                    return;
+                }
+                
+                string backupPath = GameObjectStateBackup.SaveState(obj, request.turnId);
+                
+                var response = new GameObjectBackupResponse
+                {
+                    success = true,
+                    backupPath = backupPath,
+                    error = null
+                };
+                SendJson(context.Response, response);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] GameObject backup error: {e}");
+                var errorResponse = new GameObjectBackupResponse
+                {
+                    success = false,
+                    backupPath = "",
+                    error = e.Message
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Handle POST /api/backup/exists
+        /// </summary>
+        private static void HandleBackupExists(HttpListenerContext context)
+        {
+            try
+            {
+                string requestBody = ReadRequestBody(context.Request);
+                var request = JsonUtility.FromJson<BackupExistsRequest>(requestBody);
+
+                if (request == null || request.paths == null)
+                {
+                    var errorResponse = new BackupExistsResponse
+                    {
+                        success = false,
+                        existingPaths = new string[0],
+                        error = "paths array is required"
+                    };
+                    SendJson(context.Response, errorResponse);
+                    return;
+                }
+
+                var existing = new List<string>();
+                foreach (var rawPath in request.paths)
+                {
+                    if (string.IsNullOrEmpty(rawPath))
+                    {
+                        continue;
+                    }
+
+                    var normalized = rawPath.Replace('\\', '/');
+                    if (File.Exists(normalized))
+                    {
+                        existing.Add(rawPath);
+                    }
+                }
+
+                var response = new BackupExistsResponse
+                {
+                    success = true,
+                    existingPaths = existing.ToArray(),
+                    error = null
+                };
+                SendJson(context.Response, response);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Backup exists check error: {e}");
+                var errorResponse = new BackupExistsResponse
+                {
+                    success = false,
+                    existingPaths = new string[0],
+                    error = e.Message
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Handle POST /api/turn/revert
+        /// </summary>
+        private static void HandleTurnRevert(HttpListenerContext context)
+        {
+            try
+            {
+                string requestBody = ReadRequestBody(context.Request);
+                var request = JsonUtility.FromJson<TurnRevertRequest>(requestBody);
+                
+                int filesRestored = 0;
+                int filesDeleted = 0;
+                int gameObjectsRestored = 0;
+                int gameObjectsDeleted = 0;
+                
+                // Process file changes (in reverse order)
+                if (request.fileChanges != null)
+                {
+                    for (int i = request.fileChanges.Length - 1; i >= 0; i--)
+                    {
+                        var change = request.fileChanges[i];
+                        
+                        if (change.changeType == "created")
+                        {
+                            // Delete created file
+                            // Normalize path (Unity uses forward slashes)
+                            string normalizedPath = change.filePath.Replace('\\', '/');
+                            
+                            if (File.Exists(normalizedPath))
+                            {
+                                Debug.Log($"[TurnRevert] Deleting created file: {normalizedPath}");
+                                try
+                                {
+                                    File.Delete(normalizedPath);
+                                    string metaPath = normalizedPath + ".meta";
+                                    if (File.Exists(metaPath))
+                                    {
+                                        File.Delete(metaPath);
+                                    }
+                                    filesDeleted++;
+                                    Debug.Log($"[TurnRevert] Successfully deleted file: {normalizedPath}");
+                                }
+                                catch (Exception e)
+                                {
+                                    Debug.LogError($"[TurnRevert] Failed to delete file {normalizedPath}: {e.Message}");
+                                }
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"[TurnRevert] File not found for deletion: {normalizedPath} (original: {change.filePath})");
+                            }
+                        }
+                        else if (change.changeType == "modified" || change.changeType == "deleted")
+                        {
+                            // Restore from backup
+                            if (!string.IsNullOrEmpty(change.backupPath) && File.Exists(change.backupPath))
+                            {
+                                string dir = Path.GetDirectoryName(change.filePath);
+                                if (!Directory.Exists(dir))
+                                {
+                                    Directory.CreateDirectory(dir);
+                                }
+                                
+                                File.Copy(change.backupPath, change.filePath, true);
+                                string metaBackup = change.backupPath + ".meta";
+                                string metaPath = change.filePath + ".meta";
+                                if (File.Exists(metaBackup))
+                                {
+                                    File.Copy(metaBackup, metaPath, true);
+                                }
+                                filesRestored++;
+                            }
+                        }
+                    }
+                }
+                
+                // Process GameObject changes (in reverse order)
+                if (request.gameObjectChanges != null)
+                {
+                    for (int i = request.gameObjectChanges.Length - 1; i >= 0; i--)
+                    {
+                        var change = request.gameObjectChanges[i];
+                        
+                        if (change.changeType == "created")
+                        {
+                            // Destroy created GameObject
+                            GameObject obj = ToolUtils.FindGameObjectByPath(change.gameObjectPath);
+                            if (obj != null)
+                            {
+                                Debug.Log($"[TurnRevert] Destroying created GameObject: {change.gameObjectPath}");
+                                UnityEngine.Object.DestroyImmediate(obj);
+                                gameObjectsDeleted++;
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"[TurnRevert] GameObject not found for deletion: {change.gameObjectPath}");
+                            }
+                        }
+                        else if (change.changeType == "modified")
+                        {
+                            // Restore state from backup using prefab system for complete restoration including components
+                            if (!string.IsNullOrEmpty(change.stateBackupPath))
+                            {
+                                var state = GameObjectStateBackup.LoadState(change.stateBackupPath);
+                                if (state != null)
+                                {
+                                    GameObject obj = ToolUtils.FindGameObjectByPath(change.gameObjectPath);
+                                    if (obj != null)
+                                    {
+                                        // Use RestoreStateToGameObject for complete restoration including components
+                                        // This restores from prefab backup which captures all components
+                                        GameObject restoredObj = GameObjectStateBackup.RestoreStateToGameObject(obj, state);
+                                        if (restoredObj != null)
+                                        {
+                                            gameObjectsRestored++;
+                                            Debug.Log($"[TurnRevert] Restored GameObject: {change.gameObjectPath} (components restored)");
+                                        }
+                                        else
+                                        {
+                                            Debug.LogWarning($"[TurnRevert] Failed to restore GameObject: {change.gameObjectPath}");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Debug.LogWarning($"[TurnRevert] GameObject not found for restoration: {change.gameObjectPath}");
+                                    }
+                                }
+                                else
+                                {
+                                    Debug.LogError($"[TurnRevert] Failed to load state from backup: {change.stateBackupPath}");
+                                }
+                            }
+                        }
+                        else if (change.changeType == "deleted")
+                        {
+                            // Recreate GameObject from state
+                            if (!string.IsNullOrEmpty(change.stateBackupPath))
+                            {
+                                var state = GameObjectStateBackup.LoadState(change.stateBackupPath);
+                                if (state != null)
+                                {
+                                    // Create new GameObject with the saved name
+                                    // RestoreStateToGameObject will recreate as primitive if needed
+                                    GameObject recreated = new GameObject(state.name);
+                                    
+                                    // Restore state directly to the newly created GameObject
+                                    // Note: RestoreStateToGameObject may recreate the GameObject as a primitive and return a new reference
+                                    GameObject restoredObj = GameObjectStateBackup.RestoreStateToGameObject(recreated, state);
+                                    if (restoredObj != null)
+                                    {
+                                        gameObjectsRestored++;
+                                        Debug.Log($"[TurnRevert] Recreated GameObject: {change.gameObjectPath} (name: {state.name})");
+                                    }
+                                    else
+                                    {
+                                        Debug.LogWarning($"[TurnRevert] Failed to recreate GameObject: {change.gameObjectPath}");
+                                        // Clean up if restoration failed
+                                        if (recreated != null)
+                                            UnityEngine.Object.DestroyImmediate(recreated);
+                                    }
+                                }
+                                else
+                                {
+                                    Debug.LogError($"[TurnRevert] Failed to load state from backup: {change.stateBackupPath}");
+                                }
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"[TurnRevert] No state backup path for deleted GameObject: {change.gameObjectPath}");
+                            }
+                        }
+                    }
+                }
+                
+                // Refresh asset database after file changes
+                if (filesRestored > 0 || filesDeleted > 0)
+                {
+                    AssetDatabase.Refresh();
+                }
+                
+                // Delete backup folders after revert (cleanup)
+                // 1. JSON backups in .gladekit-backups/
+                string backupDir = Path.Combine(".gladekit-backups", $"turn-{request.turnId}");
+                if (Directory.Exists(backupDir))
+                {
+                    try
+                    {
+                        Directory.Delete(backupDir, true);
+                        Debug.Log($"[TurnRevert] Deleted backup folder: {backupDir}");
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"[TurnRevert] Failed to delete backup folder: {e.Message}");
+                    }
+                }
+                
+                // 2. Prefab backups in Assets/Temp/GladeKitBackups/
+                string prefabBackupDir = Path.Combine("Assets", "Temp", "GladeKitBackups", $"turn-{request.turnId}");
+                if (Directory.Exists(prefabBackupDir))
+                {
+                    try
+                    {
+                        Directory.Delete(prefabBackupDir, true);
+                        // Also delete .meta files
+                        string metaFile = prefabBackupDir + ".meta";
+                        if (File.Exists(metaFile))
+                        {
+                            File.Delete(metaFile);
+                        }
+                        AssetDatabase.Refresh();
+                        Debug.Log($"[TurnRevert] Deleted prefab backup folder: {prefabBackupDir}");
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"[TurnRevert] Failed to delete prefab backup folder: {e.Message}");
+                    }
+                }
+                
+                var response = new TurnRevertResponse
+                {
+                    success = true,
+                    message = $"Reverted turn: {filesRestored} files restored, {filesDeleted} files deleted, {gameObjectsRestored} GameObjects restored, {gameObjectsDeleted} GameObjects deleted",
+                    error = null,
+                    filesRestored = filesRestored,
+                    filesDeleted = filesDeleted,
+                    gameObjectsRestored = gameObjectsRestored,
+                    gameObjectsDeleted = gameObjectsDeleted
+                };
+                
+                SendJson(context.Response, response);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Turn revert error: {e}");
+                var errorResponse = new TurnRevertResponse
+                {
+                    success = false,
+                    message = "",
+                    error = e.Message,
+                    filesRestored = 0,
+                    filesDeleted = 0,
+                    gameObjectsRestored = 0,
+                    gameObjectsDeleted = 0
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Handle POST /api/turn/accept
+        /// </summary>
+        private static void HandleTurnAccept(HttpListenerContext context)
+        {
+            try
+            {
+                string requestBody = ReadRequestBody(context.Request);
+                var request = JsonUtility.FromJson<TurnAcceptRequest>(requestBody);
+                
+                // Delete backup folders for this turn
+                // 1. JSON backups in .gladekit-backups/
+                string backupDir = Path.Combine(".gladekit-backups", $"turn-{request.turnId}");
+                if (Directory.Exists(backupDir))
+                {
+                    try
+                    {
+                        Directory.Delete(backupDir, true);
+                        Debug.Log($"[TurnAccept] Deleted backup folder: {backupDir}");
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"[TurnAccept] Failed to delete backup folder: {e.Message}");
+                    }
+                }
+                else
+                {
+                    Debug.Log($"[TurnAccept] Backup folder not found (may have been already deleted): {backupDir}");
+                }
+                
+                // 2. Prefab backups in Assets/Temp/GladeKitBackups/
+                string prefabBackupDir = Path.Combine("Assets", "Temp", "GladeKitBackups", $"turn-{request.turnId}");
+                if (Directory.Exists(prefabBackupDir))
+                {
+                    try
+                    {
+                        Directory.Delete(prefabBackupDir, true);
+                        // Also delete .meta files
+                        string metaFile = prefabBackupDir + ".meta";
+                        if (File.Exists(metaFile))
+                        {
+                            File.Delete(metaFile);
+                        }
+                        AssetDatabase.Refresh();
+                        Debug.Log($"[TurnAccept] Deleted prefab backup folder: {prefabBackupDir}");
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"[TurnAccept] Failed to delete prefab backup folder: {e.Message}");
+                    }
+                }
+                
+                var response = new TurnAcceptResponse
+                {
+                    success = true,
+                    message = $"Accepted turn {request.turnId}",
+                    error = null
+                };
+                
+                SendJson(context.Response, response);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Turn accept error: {e}");
+                var errorResponse = new TurnAcceptResponse
+                {
+                    success = false,
+                    message = "",
+                    error = e.Message
+                };
+                SendJson(context.Response, errorResponse);
+            }
+        }
+
+        /// <summary>
+        /// Check if a tool requires compilation
+        /// </summary>
+        private static bool ToolRequiresCompilation(string toolName)
+        {
+            // Tools that trigger compilation
+            return toolName == "create_script" || 
+                   toolName == "modify_script" ||
+                   toolName == "add_component"; // Adding components may require scripts to be compiled first
+        }
+
+        /// <summary>
+        /// Read request body as string
+        /// </summary>
+        private static string ReadRequestBody(HttpListenerRequest request)
+        {
+            using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+            {
+                return reader.ReadToEnd();
+            }
+        }
+
+        /// <summary>
+        /// Send JSON response
+        /// </summary>
+        private static void SendJson(HttpListenerResponse response, object obj)
+        {
+            string json = JsonUtility.ToJson(obj);
+            byte[] buffer = Encoding.UTF8.GetBytes(json);
+
+            response.ContentType = "application/json";
+            response.ContentLength64 = buffer.Length;
+            response.StatusCode = 200;
+
+            response.OutputStream.Write(buffer, 0, buffer.Length);
+            response.Close();
+        }
+
+        /// <summary>
+        /// Handle settings update request
+        /// </summary>
+        private static void HandleSettings(HttpListenerContext context)
+        {
+            var response = context.Response;
+            try
+            {
+                using (var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8))
+                {
+                    string json = reader.ReadToEnd();
+                    var settings = JsonUtility.FromJson<SettingsRequest>(json);
+                    
+                    if (settings.referenceDemoAssets.HasValue)
+                    {
+                        EditorPrefs.SetBool("GladeAI.ReferenceDemoAssets", settings.referenceDemoAssets.Value);
+                        Debug.Log($"[UnityBridge] Updated referenceDemoAssets setting: {settings.referenceDemoAssets.Value}");
+                    }
+                    
+                    var result = new { success = true };
+                    string resultJson = JsonUtility.ToJson(result);
+                    byte[] buffer = Encoding.UTF8.GetBytes(resultJson);
+                    
+                    response.ContentType = "application/json";
+                    response.ContentLength64 = buffer.Length;
+                    response.StatusCode = 200;
+                    response.OutputStream.Write(buffer, 0, buffer.Length);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[UnityBridge] Error handling settings: {e.Message}");
+                SendError(response, 500, $"Internal error: {e.Message}");
+            }
+            finally
+            {
+                response.Close();
+            }
+        }
+        
+        [System.Serializable]
+        private class SettingsRequest
+        {
+            public bool? referenceDemoAssets;
+        }
+
+        /// <summary>
+        /// Send error response
+        /// </summary>
+        private static void SendError(HttpListenerResponse response, int statusCode, string message)
+        {
+            var errorObj = new { error = message };
+            string json = JsonUtility.ToJson(errorObj);
+            byte[] buffer = Encoding.UTF8.GetBytes(json);
+
+            response.ContentType = "application/json";
+            response.ContentLength64 = buffer.Length;
+            response.StatusCode = statusCode;
+
+            response.OutputStream.Write(buffer, 0, buffer.Length);
+            response.Close();
+        }
+
+        /// <summary>UTC time of the last request received by the bridge, or DateTime.MinValue if none.</summary>
+        public static DateTime LastRequestTime => _lastRequestTime;
+
+        /// <summary>
+        /// Check if a client is currently connected (has made a request recently)
+        /// </summary>
+        public static bool IsConnected()
+        {
+            if (!_isRunning)
+                return false;
+            
+            if (_lastRequestTime == DateTime.MinValue)
+                return false; // Never received a request
+            
+            double secondsSinceLastRequest = (DateTime.Now - _lastRequestTime).TotalSeconds;
+            return secondsSinceLastRequest < ConnectionTimeoutSeconds;
+        }
+
+        /// <summary>
+        /// Menu item: Open the GladeKit MCP status window.
+        /// Kept for backwards compatibility — redirects to the new EditorWindow.
+        /// </summary>
+        [MenuItem("Window/GladeKit/Check Status")]
+        public static void CheckServerStatus()
+        {
+            GladeKitMCPWindow.ShowWindow();
+        }
+    }
+}

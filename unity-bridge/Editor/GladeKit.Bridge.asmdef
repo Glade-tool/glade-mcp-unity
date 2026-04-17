@@ -1,0 +1,45 @@
+{
+    "name": "GladeKit.Bridge",
+    "rootNamespace": "GladeAgenticAI",
+    "references": [
+        "Unity.InputSystem",
+        "Unity.AI.Navigation"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.inputsystem",
+            "expression": "",
+            "define": "GLADE_INPUT_SYSTEM"
+        },
+        {
+            "name": "com.unity.ai.navigation",
+            "expression": "",
+            "define": "GLADE_AI_NAVIGATION"
+        },
+        {
+            "name": "com.unity.cinemachine",
+            "expression": "",
+            "define": "GLADE_CINEMACHINE"
+        },
+        {
+            "name": "com.unity.render-pipelines.universal",
+            "expression": "",
+            "define": "GLADE_SRP"
+        },
+        {
+            "name": "com.unity.render-pipelines.high-definition",
+            "expression": "",
+            "define": "GLADE_SRP"
+        }
+    ],
+    "noEngineReferences": false
+}

@@ -1,0 +1,532 @@
+"""
+GladeKit MCP Server — connects AI clients to Unity Editor.
+
+Uses the low-level mcp.server.Server API for tool registration (we have
+222+ pre-existing JSON schemas) and FastMCP-style helpers for resources.
+Runs on stdio transport for compatibility with Cursor, Claude Code, Windsurf.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+from mcp import types
+
+from . import bridge, cloud
+from .tools.registry import get_mcp_tools, dispatch_tool_call
+from .tools.task_filter import get_relevant_tool_summary
+from .prompts import build_prompt_from_bridge
+from . import search, skill
+
+logger = logging.getLogger("gladekit-mcp")
+
+_INSTRUCTIONS = (
+    "You are connected to a live Unity Editor via GladeKit. "
+    "Use the gladekit-unity tools for ALL Unity-related tasks: creating/modifying "
+    "GameObjects, scenes, materials, scripts, components, physics, UI, lighting, "
+    "animation, and audio. Do NOT edit .unity, .prefab, .asset, or .meta files "
+    "directly — they are serialized binary/YAML and will corrupt. Do NOT try to "
+    "infer scene contents from files — call get_scene_hierarchy instead.\n\n"
+    "Workflow: (1) call get_scene_hierarchy to see what exists, (2) call "
+    "get_relevant_tools with a task description to discover the best tools, "
+    "(3) execute the tools. For any request involving the Unity scene or project "
+    "assets, prefer these tools over file editing."
+)
+
+server = Server(
+    "gladekit-unity",
+    instructions=_INSTRUCTIONS,
+)
+
+# ── In-session memory ─────────────────────────────────────────────────────────
+# Simple list of facts the AI stores during the current session. Persists for
+# the lifetime of this MCP server process (one process = one conversation).
+_session_memory: list[str] = []
+
+
+# ── Meta-tools ────────────────────────────────────────────────────────────────
+
+_META_TOOLS = [
+    types.Tool(
+        name="get_relevant_tools",
+        description=(
+            "Given a Unity task description, returns the most relevant tools "
+            "for that task — including extended tools beyond the core listed set. "
+            "Call this before starting specialized work (animator blend trees, "
+            "navmesh, IK, terrain, particle systems, cinemachine, etc.) to "
+            "discover the right tool names. Extended tools are callable even "
+            "though they don't appear in the tool list."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "The user's task description (e.g. 'make the cube red', 'set up a blend tree').",
+                },
+            },
+            "required": ["message"],
+        },
+    ),
+    types.Tool(
+        name="remember_for_session",
+        description=(
+            "Store a fact or piece of context for the current session. "
+            "Use this to remember project-specific details, user preferences, "
+            "or intermediate findings that you'll need to reference later in this conversation. "
+            "Facts are stored in memory for the lifetime of this MCP session only."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "fact": {
+                    "type": "string",
+                    "description": "The fact or context to remember (e.g. 'Player uses CharacterController, not Rigidbody').",
+                },
+            },
+            "required": ["fact"],
+        },
+    ),
+    types.Tool(
+        name="recall_session_memories",
+        description=(
+            "Retrieve all facts stored with remember_for_session during this session. "
+            "Call this to recall project context you captured earlier in the conversation."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {},
+        },
+    ),
+    types.Tool(
+        name="batch_execute",
+        description=(
+            "Execute multiple tool calls in a single request to Unity. "
+            "Reduces round-trip overhead for multi-step operations like "
+            "create object → set transform → add component → create material → assign material. "
+            "Each call runs sequentially on the Unity main thread. "
+            "Returns per-call results with individual success/failure status — "
+            "partial failures do not abort the batch."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "calls": {
+                    "type": "array",
+                    "description": "Array of tool calls to execute sequentially.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "toolName": {
+                                "type": "string",
+                                "description": "The tool name (e.g. 'create_game_object').",
+                            },
+                            "arguments": {
+                                "type": "object",
+                                "description": "Arguments for the tool call.",
+                            },
+                        },
+                        "required": ["toolName"],
+                    },
+                    "minItems": 1,
+                    "maxItems": 50,
+                },
+            },
+            "required": ["calls"],
+        },
+    ),
+    types.Tool(
+        name="search_project_scripts",
+        description=(
+            "Semantically search project scripts by relevance to a query. "
+            "Returns the top matching scripts ranked by cosine similarity. "
+            f"{'Requires OPENAI_API_KEY — not currently set, will return unranked results.' if not search.is_available() else 'Semantic search enabled (OPENAI_API_KEY detected).'}"
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What you're looking for (e.g. 'player movement', 'health system', 'inventory').",
+                },
+                "top_n": {
+                    "type": "integer",
+                    "description": "Number of results to return (default: 5, max: 20).",
+                    "default": 5,
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+]
+
+
+# ── Tool handlers ─────────────────────────────────────────────────────────────
+
+
+@server.list_tools()
+async def list_tools() -> list[types.Tool]:
+    """Return all Unity tools + meta-tools as MCP tool definitions."""
+    return get_mcp_tools() + _META_TOOLS
+
+
+@server.call_tool()
+async def call_tool(
+    name: str,
+    arguments: dict,
+) -> list[types.TextContent]:
+    """Dispatch a tool call to the Unity bridge or handle meta-tools."""
+    arguments = arguments or {}
+
+    # ── get_relevant_tools ────────────────────────────────────────────────────
+    if name == "get_relevant_tools":
+        message = arguments.get("message", "")
+        # Side-effect: accumulate message for skill calibration
+        if message:
+            skill.record_message(message)
+        result = get_relevant_tool_summary(message)
+
+        # Inject RAG context from cloud knowledge base (paid tier)
+        if message and cloud.is_available():
+            rag_context = await cloud.fetch_rag_context(message)
+            if rag_context:
+                result += f"\n\n## Unity Knowledge Base\n\n{rag_context}"
+
+        return [types.TextContent(type="text", text=result)]
+
+    # ── remember_for_session ──────────────────────────────────────────────────
+    if name == "remember_for_session":
+        fact = arguments.get("fact", "").strip()
+        if not fact:
+            return [types.TextContent(type="text", text="No fact provided.")]
+        _session_memory.append(fact)
+
+        # Persist to cloud memory (paid tier, best-effort)
+        if cloud.is_available():
+            try:
+                health = await bridge.check_health()
+                project_name = os.path.basename(health.get("projectPath", ""))
+                if project_name:
+                    await cloud.save_session_memory(project_name, fact)
+            except Exception:
+                pass  # Cloud save is best-effort
+
+        return [
+            types.TextContent(
+                type="text",
+                text=f"Stored. Session memory now has {len(_session_memory)} item(s).",
+            )
+        ]
+
+    # ── recall_session_memories ───────────────────────────────────────────────
+    if name == "recall_session_memories":
+        if not _session_memory:
+            return [
+                types.TextContent(type="text", text="No session memories stored yet.")
+            ]
+        items = "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(_session_memory))
+        return [types.TextContent(type="text", text=f"Session memories:\n{items}")]
+
+    # ── batch_execute ────────────────────────────────────────────────────────
+    if name == "batch_execute":
+        calls = arguments.get("calls", [])
+        if not calls:
+            return [types.TextContent(type="text", text="No tool calls provided.")]
+        if len(calls) > 50:
+            return [types.TextContent(type="text", text="Maximum 50 tool calls per batch.")]
+
+        # Sanitize arguments the same way dispatch_tool_call does
+        sanitized_calls = []
+        for call in calls:
+            tool_name = call.get("toolName", "")
+            raw_args = call.get("arguments", {}) or {}
+            clean_args = {}
+            for k, v in raw_args.items():
+                if v is None:
+                    continue
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    clean_args[k] = str(v)
+                else:
+                    clean_args[k] = v
+            sanitized_calls.append({"toolName": tool_name, "arguments": clean_args})
+
+        try:
+            results = await bridge.execute_batch(sanitized_calls)
+        except Exception as exc:
+            return [types.TextContent(type="text", text=f"Batch execution error: {exc}")]
+
+        # Format results as readable text
+        lines = [f"Batch executed {len(sanitized_calls)} tool(s):\n"]
+        for i, r in enumerate(results):
+            status = "OK" if r.get("success") else "FAILED"
+            tool = r.get("toolName", sanitized_calls[i]["toolName"] if i < len(sanitized_calls) else "?")
+            if r.get("success"):
+                result_str = r.get("result", "")
+                # Truncate very long results in the summary
+                if len(result_str) > 500:
+                    result_str = result_str[:500] + "..."
+                lines.append(f"[{i+1}] {tool}: {status} — {result_str}")
+            else:
+                lines.append(f"[{i+1}] {tool}: {status} — {r.get('error', 'Unknown error')}")
+
+        return [types.TextContent(type="text", text="\n".join(lines))]
+
+    # ── search_project_scripts ────────────────────────────────────────────────
+    if name == "search_project_scripts":
+        query = arguments.get("query", "")
+        top_n = min(int(arguments.get("top_n", 5)), 20)
+        if not query:
+            return [types.TextContent(type="text", text="No query provided.")]
+        try:
+            ctx = await bridge.gather_scene_context()
+            scripts = ctx.get("scripts", [])
+            if not scripts:
+                return [
+                    types.TextContent(
+                        type="text", text="No scripts found in Unity project."
+                    )
+                ]
+            results = await search.search_scripts(query, scripts, top_n=top_n)
+            if not results:
+                return [
+                    types.TextContent(type="text", text="No matching scripts found.")
+                ]
+            lines = [f"Top {len(results)} scripts for '{query}':\n"]
+            for r in results:
+                sim = r.get("similarity")
+                sim_str = f" (similarity: {sim:.3f})" if sim is not None else ""
+                lines.append(f"- {r.get('name', '?')} [{r.get('path', '')}]{sim_str}")
+            if not search.is_available():
+                lines.append("\nNote: Set OPENAI_API_KEY to enable semantic ranking.")
+            return [types.TextContent(type="text", text="\n".join(lines))]
+        except bridge.UnityBridgeError as e:
+            return [
+                types.TextContent(
+                    type="text", text=f"Could not reach Unity bridge: {e}"
+                )
+            ]
+
+    # ── Unity bridge tools ────────────────────────────────────────────────────
+    result = await dispatch_tool_call(name, arguments)
+    return [types.TextContent(type="text", text=result)]
+
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+
+
+@server.list_resources()
+async def list_resources() -> list[types.Resource]:
+    return [
+        types.Resource(
+            uri="unity://health",
+            name="Unity Bridge Health",
+            description="Connection status and Unity project info",
+            mimeType="application/json",
+        ),
+        types.Resource(
+            uri="unity://context",
+            name="Unity Project Context",
+            description="Full scene hierarchy, scripts, packages, selection, and project settings",
+            mimeType="application/json",
+        ),
+        types.Resource(
+            uri="unity://scene/hierarchy",
+            name="Scene Hierarchy",
+            description="Current scene's GameObject hierarchy",
+            mimeType="application/json",
+        ),
+        types.Resource(
+            uri="unity://project/scripts",
+            name="Project Scripts",
+            description="List of C# scripts in the Unity project",
+            mimeType="application/json",
+        ),
+        types.Resource(
+            uri="unity://selection",
+            name="Current Selection",
+            description="Currently selected GameObjects in the Unity Editor",
+            mimeType="application/json",
+        ),
+        types.Resource(
+            uri="unity://glade-md",
+            name="Game Design Document (GLADE.md)",
+            description="Game design document from the Unity project root — genre, mechanics, art style, design pillars",
+            mimeType="text/markdown",
+        ),
+        types.Resource(
+            uri="unity://session-memory",
+            name="Session Memory",
+            description="Facts and context stored with remember_for_session during this conversation",
+            mimeType="text/plain",
+        ),
+    ]
+
+
+@server.read_resource()
+async def read_resource(uri: str) -> str:
+    uri_str = str(uri)
+
+    if uri_str == "unity://health":
+        try:
+            health = await bridge.check_health()
+            return json.dumps(health, indent=2)
+        except bridge.UnityBridgeError as e:
+            return json.dumps({"error": str(e), "status": "unreachable"})
+
+    if uri_str == "unity://context":
+        try:
+            ctx = await bridge.gather_scene_context()
+            return json.dumps(ctx, indent=2)
+        except bridge.UnityBridgeError as e:
+            return json.dumps({"error": str(e)})
+
+    if uri_str == "unity://scene/hierarchy":
+        try:
+            ctx = await bridge.gather_scene_context()
+            return json.dumps(ctx.get("sceneHierarchy", []), indent=2)
+        except bridge.UnityBridgeError as e:
+            return json.dumps({"error": str(e)})
+
+    if uri_str == "unity://project/scripts":
+        try:
+            ctx = await bridge.gather_scene_context()
+            scripts = ctx.get("scripts", [])
+            return json.dumps(
+                [{"name": s.get("name"), "path": s.get("path")} for s in scripts],
+                indent=2,
+            )
+        except bridge.UnityBridgeError as e:
+            return json.dumps({"error": str(e)})
+
+    if uri_str == "unity://selection":
+        try:
+            ctx = await bridge.gather_scene_context()
+            return json.dumps(ctx.get("selection", {}), indent=2)
+        except bridge.UnityBridgeError as e:
+            return json.dumps({"error": str(e)})
+
+    if uri_str == "unity://glade-md":
+        try:
+            health = await bridge.check_health()
+            project_path = health.get("projectPath", "")
+            if not project_path:
+                return (
+                    "GLADE.md not available: Unity bridge did not report project path."
+                )
+            glade_path = os.path.join(project_path, "GLADE.md")
+            if not os.path.exists(glade_path):
+                return "No GLADE.md found in project root. Create one to provide game design context."
+            with open(glade_path, "r") as f:
+                content = f.read()
+            if len(content) > 6000:
+                content = content[:6000] + "\n\n[GLADE.md truncated at ~1500 tokens]"
+            return content
+        except bridge.UnityBridgeError as e:
+            return f"GLADE.md not available: {e}"
+
+    if uri_str == "unity://session-memory":
+        if not _session_memory:
+            return "No session memories stored yet. Use remember_for_session to store facts."
+        return "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(_session_memory))
+
+    return json.dumps({"error": f"Unknown resource: {uri_str}"})
+
+
+# ── Prompts ───────────────────────────────────────────────────────────────────
+
+
+@server.list_prompts()
+async def list_prompts() -> list[types.Prompt]:
+    return [
+        types.Prompt(
+            name="unity-assistant",
+            description=(
+                "Full GladeKit system prompt for Unity development. Includes render pipeline "
+                "guidance, input system rules, tool discipline, and GLADE.md game design context. "
+                "Use this prompt to get the best results from Unity tools."
+            ),
+        ),
+    ]
+
+
+@server.get_prompt()
+async def get_prompt(name: str, arguments: dict | None = None) -> types.GetPromptResult:
+    if name == "unity-assistant":
+        # Determine project path for skill calibration
+        project_path = None
+        try:
+            health = await bridge.check_health()
+            project_path = health.get("projectPath")
+        except bridge.UnityBridgeError:
+            pass
+
+        # Load persisted skill level
+        skill_level = skill.load_skill_level(project_path)
+
+        # Build combined memory block: cloud memories + session notes
+        memory_parts = []
+
+        # Cloud memories (paid tier — conventions + past sessions)
+        if cloud.is_available() and project_path:
+            project_name = os.path.basename(project_path)
+            cloud_memories = await cloud.fetch_cloud_memories(project_name)
+            if cloud_memories:
+                memory_parts.append(cloud_memories)
+
+        # Session memories (current conversation, always available)
+        if _session_memory:
+            items = "\n".join(f"- {fact}" for fact in _session_memory)
+            memory_parts.append(f"### Session Notes\n\n{items}")
+
+        project_memories = "\n\n".join(memory_parts) if memory_parts else None
+
+        prompt_text = await build_prompt_from_bridge(
+            skill_level=skill_level,
+            project_memories=project_memories,
+        )
+        return types.GetPromptResult(
+            messages=[
+                types.PromptMessage(
+                    role="user",
+                    content=types.TextContent(type="text", text=prompt_text),
+                )
+            ],
+        )
+    raise ValueError(f"Unknown prompt: {name}")
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+
+async def run_server():
+    """Run the MCP server on stdio transport."""
+    from . import __version__, cloud, search as search_mod
+
+    bridge_url = os.environ.get("UNITY_BRIDGE_URL", "http://localhost:8765")
+    search_status = (
+        "ENABLED"
+        if search_mod.is_available()
+        else "DISABLED (set OPENAI_API_KEY to enable)"
+    )
+    cloud_status = (
+        "ENABLED"
+        if cloud.is_available()
+        else "DISABLED (set GLADEKIT_API_KEY to enable)"
+    )
+    import sys
+
+    print(
+        f"gladekit-mcp v{__version__} | bridge: {bridge_url} | "
+        f"search: {search_status} | cloud: {cloud_status}",
+        file=sys.stderr,
+    )
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options(),
+        )

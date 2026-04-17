@@ -1,0 +1,315 @@
+"""
+Core category tools — always included in every request.
+Covers: user input, thinking, scene/console queries, compilation, save/open.
+"""
+
+from typing import List, Dict
+
+CATEGORY = {
+    "name": "core",
+    "display_name": "Core & Scene Management",
+    "keywords": [
+        "help",
+        "question",
+        "think",
+        "scene",
+        "hierarchy",
+        "console",
+        "log",
+        "error",
+        "compile",
+        "refresh",
+        "save",
+        "open",
+        "build",
+        "list scenes",
+    ],
+}
+
+TOOLS: List[Dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "request_user_input",
+            "description": "Ask a clarifying question when critical ambiguity blocks progress. Use 2-4 meaningful options. Use multi-select only when multiple selections can all apply.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "Question text shown to the user.",
+                    },
+                    "selection_mode": {
+                        "type": "string",
+                        "description": "single for one choice, multi for select-all-that-apply.",
+                        "enum": ["single", "multi"],
+                        "default": "single",
+                    },
+                    "options": {
+                        "type": "array",
+                        "description": "Available options. Keep concise and mutually exclusive when possible.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "Stable option id to return in answer.",
+                                },
+                                "label": {
+                                    "type": "string",
+                                    "description": "User-facing option label.",
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "description": "Optional one-line explanation.",
+                                },
+                                "recommended": {
+                                    "type": "boolean",
+                                    "description": "Mark recommended/default option.",
+                                },
+                            },
+                            "required": ["id", "label"],
+                        },
+                    },
+                    "allow_other": {
+                        "type": "boolean",
+                        "description": "Whether user can provide custom text.",
+                        "default": True,
+                    },
+                    "min_select": {
+                        "type": "integer",
+                        "description": "Minimum options user must select.",
+                        "minimum": 0,
+                    },
+                    "max_select": {
+                        "type": "integer",
+                        "description": "Maximum options user can select.",
+                        "minimum": 1,
+                    },
+                },
+                "required": ["question", "options"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "think",
+            "description": "Reason about a complex multi-step task before executing it. Use to plan what objects/assets/scripts to create, in what order (scripts before add_component), and what positions/configurations are needed. Does not modify anything.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "thought": {
+                        "type": "string",
+                        "description": "Your reasoning about the task - what needs to be done, in what order, and why",
+                    }
+                },
+                "required": ["thought"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_scene_hierarchy",
+            "description": "List GameObjects in the active scene. Returns a flat list of hierarchy paths.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "includeInactive": {
+                        "type": "boolean",
+                        "description": "Include inactive objects. Default: true",
+                    },
+                    "maxDepth": {
+                        "type": "integer",
+                        "description": "Max depth to traverse (-1 for unlimited). Default: -1",
+                    },
+                    "rootOnly": {
+                        "type": "boolean",
+                        "description": "If true, only list root objects. Default: false",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_gameobject_info",
+            "description": "Get detailed information about a GameObject: position/rotation/scale, components, materials (with path and shaderName), and component-specific data (e.g., terrain data). Use to inspect properties or find a reference object's position before calculating offsets.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "gameObjectPath": {
+                        "type": "string",
+                        "description": "Name of the reference object (e.g., 'Player', 'MainCamera')",
+                    }
+                },
+                "required": ["gameObjectPath"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_game_objects",
+            "description": "Find GameObjects in the scene by name, tag, layer, or component type. Returns a list of matching GameObject paths.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nameContains": {
+                        "type": "string",
+                        "description": "Optional: Find objects whose name contains this substring (case-insensitive)",
+                    },
+                    "nameExact": {
+                        "type": "string",
+                        "description": "Optional: Find objects with this exact name",
+                    },
+                    "tag": {
+                        "type": "string",
+                        "description": "Optional: Find objects with this tag (e.g., 'Player', 'Enemy')",
+                    },
+                    "layer": {
+                        "type": "string",
+                        "description": "Optional: Find objects on this layer (name or index)",
+                    },
+                    "hasComponent": {
+                        "type": "string",
+                        "description": "Optional: Find objects that have this component type (e.g., 'Camera', 'Light', 'Rigidbody')",
+                    },
+                    "includeInactive": {
+                        "type": "boolean",
+                        "description": "Whether to include inactive objects. Default: false",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_selection",
+            "description": "Get the currently selected GameObjects in the Unity Editor. Returns paths to all selected objects.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_selection",
+            "description": "Set the Unity Editor selection to specific GameObjects by path. WARNING: This selects objects in the Project window (prefabs/assets) OR scene. If you select a prefab/asset, you CANNOT use it with tools that require scene GameObjects (like get_gameobject_info, set_transform, etc.). Only use set_selection for scene objects that exist in the hierarchy. To work with prefabs, you must instantiate them first with create_game_object or instantiate_prefab.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Array of GameObject paths to select (must be scene objects, not prefabs)",
+                    },
+                    "addToSelection": {
+                        "type": "boolean",
+                        "description": "If true, add to current selection instead of replacing. Default: false",
+                    },
+                },
+                "required": ["paths"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_unity_console_logs",
+            "description": "Get all Unity Editor console log entries (errors, warnings, and logs), capped at 2000. Use to debug issues, see runtime or compile errors, or when the user asks to read the console or logs. Do NOT call proactively after every action — only call when a previous tool returned an error or the user explicitly asks to check the console.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compile_scripts",
+            "description": "Request Unity script compilation.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "refresh_asset_database",
+            "description": "Refresh the AssetDatabase.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_scene",
+            "description": "Open a scene in the editor.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scenePath": {
+                        "type": "string",
+                        "description": "Path to the scene asset (e.g., 'Scenes/MainMenu.unity')",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["Single", "Additive"],
+                        "description": "Open mode: 'Single' (replace current) or 'Additive' (add to current). Default: 'Single'",
+                    },
+                },
+                "required": ["scenePath"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_scene",
+            "description": "Save the current active scene.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_scene_as",
+            "description": "Save the current active scene to a new path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scenePath": {
+                        "type": "string",
+                        "description": "Path for the new scene file (e.g., 'Scenes/Demo/DemoScene.unity')",
+                    }
+                },
+                "required": ["scenePath"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_scene",
+            "description": "Create a new scene and optionally save it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scenePath": {"type": "string"},
+                    "setup": {"type": "string"},
+                    "mode": {"type": "string"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_scenes_in_build",
+            "description": "List scenes in build settings.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+]
