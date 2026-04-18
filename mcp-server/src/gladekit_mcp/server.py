@@ -392,21 +392,21 @@ async def read_resource(uri: str) -> str:
         try:
             ctx = await bridge.gather_scene_context()
 
-            # Include GLADE.md if it exists
-            health = await bridge.check_health()
-            project_path = health.get("projectPath", "")
-            if project_path:
-                glade_path = os.path.join(project_path, "GLADE.md")
-                if os.path.exists(glade_path):
-                    try:
+            # Best-effort GLADE.md enrichment — failures here must not fail the resource.
+            try:
+                health = await bridge.check_health()
+                project_path = health.get("projectPath", "")
+                if project_path:
+                    glade_path = os.path.join(project_path, "GLADE.md")
+                    if os.path.exists(glade_path):
                         with open(glade_path, "r") as f:
                             glade_content = f.read()
                             if len(glade_content) <= 2000:
                                 ctx["gladeMarkdown"] = glade_content
                             else:
                                 ctx["gladeMarkdown"] = glade_content[:2000] + "\n\n[GLADE.md truncated...]"
-                    except Exception:
-                        pass  # Silently skip if GLADE.md can't be read
+            except Exception:
+                pass
 
             return json.dumps(ctx, indent=2)
         except bridge.UnityBridgeError as e:
