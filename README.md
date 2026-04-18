@@ -195,7 +195,7 @@ Create a `GLADE.md` file in your Unity project root. The MCP server reads it and
 ```markdown
 # My Game
 
-Genre: 2D platformer
+Genre: 3D platformer
 Player: CharacterController, double jump enabled
 Art style: pixel art, 16x16 sprites
 Naming: PascalCase for scripts, snake_case for folders
@@ -203,7 +203,23 @@ Naming: PascalCase for scripts, snake_case for folders
 
 ### Script semantic search
 
-With `OPENAI_API_KEY` set, the server finds relevant scripts using cosine similarity rather than filename matching. Ask "how does the enemy spawn?" and the right script surfaces - even if it's not named `EnemySpawner`.
+Set `OPENAI_API_KEY` in your MCP config's `env` field and the server ranks project scripts by semantic similarity to your query. Ask "how does the enemy spawn?" and the right script surfaces — even if it's not named `EnemySpawner`.
+
+Everything needed ships with the package; no install flags or extras required. Get a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys) (pay-as-you-go, pennies per search via `text-embedding-3-small`).
+
+```json
+{
+  "mcpServers": {
+    "gladekit-unity": {
+      "command": "uvx",
+      "args": ["gladekit-mcp"],
+      "env": { "OPENAI_API_KEY": "sk-..." }
+    }
+  }
+}
+```
+
+Without the key, `search_project_scripts` still returns scripts - just unranked. Keys are never sent anywhere except OpenAI's embedding endpoint.
 
 ### Skill calibration
 
@@ -273,7 +289,7 @@ Endpoints:
 | Variable           | Required | Description                                                             |
 | ------------------ | -------- | ----------------------------------------------------------------------- |
 | `UNITY_BRIDGE_URL` | No       | Unity bridge URL (default: `http://localhost:8765`)                     |
-| `OPENAI_API_KEY`   | No       | Enables script semantic search via embeddings                           |
+| `OPENAI_API_KEY`   | No       | Enables script semantic search via embeddings ([get one](https://platform.openai.com/api-keys)) |
 | `GLADEKIT_API_KEY` | No       | Enables RAG knowledge base, cross-session memory, convention extraction |
 
 ### Troubleshooting

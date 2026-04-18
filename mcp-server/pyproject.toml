@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gladekit-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP server for Unity game development — connect Cursor, Claude Code, Windsurf, and other AI clients to your Unity Editor."
 readme = "README.md"
 license = "MIT"
@@ -12,22 +12,14 @@ requires-python = ">=3.10"
 dependencies = [
     "mcp[cli]>=1.0",
     "httpx>=0.25.0",
+    "openai>=1.0.0",
+    "numpy>=1.21.0",
 ]
 
 [project.optional-dependencies]
-search = [
-    "openai>=1.0.0",
-    "numpy>=1.21.0",
-]
 # HTTP transport uses starlette + uvicorn. Both are already transitive deps of
 # mcp>=1.0 — this extra exists purely for explicit documentation / pinning.
 http = [
-    "starlette>=0.27",
-    "uvicorn>=0.31",
-]
-all = [
-    "openai>=1.0.0",
-    "numpy>=1.21.0",
     "starlette>=0.27",
     "uvicorn>=0.31",
 ]

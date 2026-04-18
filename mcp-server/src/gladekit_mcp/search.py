@@ -1,12 +1,11 @@
 """
-Script semantic search using OpenAI embeddings (optional free-tier feature).
+Script semantic search using OpenAI embeddings.
 
-When OPENAI_API_KEY is set and the 'openai' + 'numpy' packages are installed,
-ranks project scripts by cosine similarity to the user's query. User provides
-their own OpenAI key — no GladeKit account required.
+When OPENAI_API_KEY is set, ranks project scripts by cosine similarity to the
+user's query. User provides their own OpenAI key — no GladeKit account required.
 
-If openai/numpy are not installed, or OPENAI_API_KEY is absent, gracefully
-degrades to returning scripts unranked (keyword-only behavior).
+If OPENAI_API_KEY is absent, gracefully degrades to returning scripts unranked
+(keyword-only behavior).
 
 Usage:
     results = await search_scripts(query="jump movement", scripts=[...], top_n=5)
@@ -20,16 +19,10 @@ import logging
 import os
 from typing import Any
 
+import numpy as _np
+import openai as _openai_module
+
 logger = logging.getLogger("gladekit-mcp")
-
-_OPENAI_AVAILABLE = False
-try:
-    import numpy as _np
-    import openai as _openai_module
-
-    _OPENAI_AVAILABLE = True
-except ImportError:
-    pass
 
 _EMBEDDING_MODEL = "text-embedding-3-small"
 _DEFAULT_TOP_N = 5
@@ -50,8 +43,8 @@ def _get_openai_client():
 
 
 def is_available() -> bool:
-    """Return True if semantic search is enabled (openai + numpy installed, API key present)."""
-    return _OPENAI_AVAILABLE and bool(os.environ.get("OPENAI_API_KEY"))
+    """Return True if semantic search is enabled (OPENAI_API_KEY is set)."""
+    return bool(os.environ.get("OPENAI_API_KEY"))
 
 
 def _hash_content(text: str) -> str:
@@ -85,8 +78,8 @@ async def search_scripts(
     Each script dict should have "name", "path", and optionally "content".
     Returns the top_n most relevant scripts with a "similarity" field added.
 
-    Degrades gracefully: returns scripts[:top_n] unranked if semantic search
-    is unavailable (missing openai package or OPENAI_API_KEY).
+    Degrades gracefully: returns scripts[:top_n] unranked if OPENAI_API_KEY is
+    unset, or if embedding calls fail (rate limit, network error, etc.).
     """
     if not scripts:
         return []
@@ -130,7 +123,7 @@ async def search_scripts(
         return scored[:top_n]
 
     except Exception as exc:
-        if _OPENAI_AVAILABLE and isinstance(exc, _openai_module.RateLimitError):
+        if isinstance(exc, _openai_module.RateLimitError):
             logger.warning(
                 "OpenAI rate limit hit during script embedding — falling back to "
                 "unranked results. Try again in a moment or reduce search frequency."
