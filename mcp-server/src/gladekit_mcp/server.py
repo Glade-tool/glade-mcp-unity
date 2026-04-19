@@ -30,10 +30,13 @@ _INSTRUCTIONS = (
     "animation, and audio. Do NOT edit .unity, .prefab, .asset, or .meta files "
     "directly — they are serialized binary/YAML and will corrupt. Do NOT try to "
     "infer scene contents from files — call get_scene_hierarchy instead.\n\n"
-    "Workflow: (1) call get_scene_hierarchy to see what exists, (2) call "
-    "get_relevant_tools with a task description to discover the best tools, "
-    "(3) execute the tools. For any request involving the Unity scene or project "
-    "assets, prefer these tools over file editing."
+    "Before creating scripts involving player movement or input handling, read the "
+    "'Project Configuration' resource (unity://project/info) to determine which Input "
+    "System API to use (NEW InputSystem vs. legacy Input.GetAxis).\n\n"
+    "Workflow: (1) read Project Configuration resource, (2) call get_scene_hierarchy "
+    "to see what exists, (3) call get_relevant_tools with a task description to discover "
+    "the best tools, (4) execute the tools. For any request involving the Unity scene or "
+    "project assets, prefer these tools over file editing."
 )
 
 server = Server(
@@ -374,6 +377,12 @@ async def list_resources() -> list[types.Resource]:
             description="Facts and context stored with remember_for_session during this conversation",
             mimeType="text/plain",
         ),
+        types.Resource(
+            uri="unity://project/info",
+            name="Project Configuration",
+            description="Input system mode (NEW/OLD/BOTH), render pipeline, default shader, and other project settings",
+            mimeType="application/json",
+        ),
     ]
 
 
@@ -459,6 +468,22 @@ async def read_resource(uri: str) -> str:
         if not memory:
             return "No session memories stored yet. Use remember_for_session to store facts."
         return "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(memory))
+
+    if uri_str == "unity://project/info":
+        try:
+            ctx = await bridge.gather_scene_context()
+            project_info = ctx.get("projectInfo", {})
+            # Extract only essential project configuration
+            filtered_info = {
+                "inputSystem": project_info.get("inputSystem"),
+                "renderPipeline": project_info.get("renderPipeline"),
+                "defaultShader": project_info.get("defaultShader"),
+                "unityVersion": project_info.get("unityVersion"),
+                "projectName": project_info.get("projectName"),
+            }
+            return json.dumps(filtered_info, indent=2)
+        except bridge.UnityBridgeError as e:
+            return json.dumps({"error": str(e)})
 
     return json.dumps({"error": f"Unknown resource: {uri_str}"})
 

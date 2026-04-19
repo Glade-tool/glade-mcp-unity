@@ -399,14 +399,10 @@ namespace GladeAgenticAI.Services
             };
 
             // Determine Input System
-            #if GLADE_INPUT_SYSTEM
             #if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
             info.inputSystem = "NEW";
-            #elif !ENABLE_INPUT_SYSTEM && ENABLE_LEGACY_INPUT_MANAGER
-            info.inputSystem = "OLD";
-            #else
+            #elif ENABLE_INPUT_SYSTEM && ENABLE_LEGACY_INPUT_MANAGER
             info.inputSystem = "BOTH";
-            #endif
             #else
             info.inputSystem = "OLD";
             #endif

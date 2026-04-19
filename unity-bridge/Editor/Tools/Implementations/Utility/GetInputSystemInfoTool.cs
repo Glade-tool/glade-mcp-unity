@@ -15,14 +15,11 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Utility
             string activeInputHandling;
             bool newPackageInstalled;
 
-#if GLADE_INPUT_SYSTEM
 #if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
             activeInputHandling = "NEW";
-#elif !ENABLE_INPUT_SYSTEM && ENABLE_LEGACY_INPUT_MANAGER
-            activeInputHandling = "OLD";
-#else
+            newPackageInstalled = true;
+#elif ENABLE_INPUT_SYSTEM && ENABLE_LEGACY_INPUT_MANAGER
             activeInputHandling = "BOTH";
-#endif
             newPackageInstalled = true;
 #else
             activeInputHandling = "OLD";
