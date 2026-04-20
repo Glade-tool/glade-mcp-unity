@@ -47,6 +47,16 @@ namespace GladeAgenticAI.Bridge
         public string projectHash;
         public string context; // JSON string
         public string error;
+        // Phase-0 instrumentation — milliseconds spent gathering each sub-step.
+        // 0 means the sub-step was skipped by options.
+        public double total_ms;
+        public double project_info_ms;
+        public double scene_summary_ms;
+        public double hierarchy_ms;
+        public double scripts_ms;
+        public double selection_ms;
+        public double packages_ms;
+        public double errors_ms;
     }
     
     [Serializable]

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -7,6 +8,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using UnityEngine.SceneManagement;
+using Debug = UnityEngine.Debug;
 
 namespace GladeAgenticAI.Services
 {
@@ -177,6 +179,25 @@ namespace GladeAgenticAI.Services
         }
 
         /// <summary>
+        /// Phase-0 instrumentation. Milliseconds spent in each GatherRawData sub-step.
+        /// Updated by GatherRawData on every call; read by the HTTP bridge to surface
+        /// sub-step timings in ContextGatherResponse.
+        /// </summary>
+        public struct GatherTimings
+        {
+            public double totalMs;
+            public double projectInfoMs;
+            public double sceneSummaryMs;
+            public double hierarchyMs;
+            public double scriptsMs;
+            public double selectionMs;
+            public double packagesMs;
+            public double errorsMs;
+        }
+
+        public static GatherTimings LastGatherTimings;
+
+        /// <summary>
         /// Lightweight manifest used for context caching handshake (fast to compute).
         /// </summary>
         public static string GetProjectManifestJson()
@@ -221,42 +242,62 @@ namespace GladeAgenticAI.Services
         public static UnityProjectData GatherRawData(ContextOptions options)
         {
             var data = new UnityProjectData();
+            var timings = new GatherTimings();
+            var swTotal = Stopwatch.StartNew();
+            var sw = new Stopwatch();
 
             if (options.includeProjectInfo)
             {
+                sw.Restart();
                 data.projectInfo = GetProjectInfo();
+                timings.projectInfoMs = sw.Elapsed.TotalMilliseconds;
             }
 
             if (options.includeSceneSummary)
             {
+                sw.Restart();
                 data.sceneSummary = GetSceneSummary(options.includeCameras);
+                timings.sceneSummaryMs = sw.Elapsed.TotalMilliseconds;
             }
 
             if (options.includeSceneHierarchy)
             {
+                sw.Restart();
                 data.sceneHierarchy = GetSceneHierarchy(options.sceneMaxDepth, options.includeCameras);
+                timings.hierarchyMs = sw.Elapsed.TotalMilliseconds;
             }
 
             if (options.includeScriptsList || options.includeScriptsContent)
             {
+                sw.Restart();
                 data.scripts = GetScripts(options.includeScriptsContent, options.maxScriptBytes);
+                timings.scriptsMs = sw.Elapsed.TotalMilliseconds;
             }
 
             if (options.includeSelection)
             {
+                sw.Restart();
                 data.selection = GetSelection();
+                timings.selectionMs = sw.Elapsed.TotalMilliseconds;
             }
 
             if (options.includePackages)
             {
+                sw.Restart();
                 data.packages = GetPackages();
+                timings.packagesMs = sw.Elapsed.TotalMilliseconds;
             }
 
             if (options.includeErrors)
             {
+                sw.Restart();
                 data.errors = GetErrors();
+                timings.errorsMs = sw.Elapsed.TotalMilliseconds;
             }
 
+            swTotal.Stop();
+            timings.totalMs = swTotal.Elapsed.TotalMilliseconds;
+            LastGatherTimings = timings;
             return data;
         }
 

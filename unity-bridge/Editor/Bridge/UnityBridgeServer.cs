@@ -623,6 +623,7 @@ namespace GladeAgenticAI.Bridge
 
                 // Gather context data
                 var data = UnityContextGatherer.GatherRawData(options);
+                var gatherTimings = UnityContextGatherer.LastGatherTimings;
                 string contextJson = JsonUtility.ToJson(data);
                 string projectHash = UnityContextGatherer.GetProjectHash();
 
@@ -631,7 +632,15 @@ namespace GladeAgenticAI.Bridge
                     success = true,
                     projectHash = projectHash,
                     context = contextJson,
-                    error = null
+                    error = null,
+                    total_ms = gatherTimings.totalMs,
+                    project_info_ms = gatherTimings.projectInfoMs,
+                    scene_summary_ms = gatherTimings.sceneSummaryMs,
+                    hierarchy_ms = gatherTimings.hierarchyMs,
+                    scripts_ms = gatherTimings.scriptsMs,
+                    selection_ms = gatherTimings.selectionMs,
+                    packages_ms = gatherTimings.packagesMs,
+                    errors_ms = gatherTimings.errorsMs,
                 };
 
                 SendJson(context.Response, response);
