@@ -209,20 +209,35 @@ namespace GladeAgenticAI.Bridge
         }
 
         /// <summary>
-        /// Process queued requests on Unity main thread (called via EditorApplication.update)
+        /// Process queued requests on Unity main thread (called via EditorApplication.update).
+        ///
+        /// Phase 2.2: Drain the queue into a local snapshot under the lock, then release
+        /// the lock before invoking HandleRequest. This lets the listener thread enqueue
+        /// new requests while we're processing earlier ones — without it, a slow tool
+        /// (e.g. AssetDatabase.Refresh) would block the listener for the whole tick.
+        /// Combined with the background response-write offload, the main thread yields
+        /// to Unity between tools.
         /// </summary>
         private static void ProcessRequests()
         {
             if (!_isRunning)
                 return;
 
+            List<HttpListenerContext> toProcess = null;
             lock (_requestQueue)
             {
+                if (_requestQueue.Count == 0)
+                    return;
+                toProcess = new List<HttpListenerContext>(_requestQueue.Count);
                 while (_requestQueue.Count > 0)
                 {
-                    var context = _requestQueue.Dequeue();
-                    HandleRequest(context);
+                    toProcess.Add(_requestQueue.Dequeue());
                 }
+            }
+
+            foreach (var context in toProcess)
+            {
+                HandleRequest(context);
             }
         }
 
