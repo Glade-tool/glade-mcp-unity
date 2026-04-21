@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using System.IO;
 using System.Security.Cryptography;
@@ -178,6 +179,55 @@ namespace GladeAgenticAI.Services
             public int maxScriptBytes; // 0 = unlimited
         }
 
+        // ── Phase 1.3: GatherRawData result cache ─────────────────────────────
+        // Cache key = (sceneGuid, selectionPath, 2s TTL bucket, option bits).
+        // Invalidated explicitly on scene save / asset import / project change.
+        // The 2s bucket acts as a safety-net TTL so stale state never persists longer.
+        private static UnityProjectData _cachedData;
+        private static string _cachedKey;
+
+        [InitializeOnLoadMethod]
+        private static void RegisterCacheInvalidationHooks()
+        {
+            EditorSceneManager.sceneSaved -= OnSceneSaved;
+            EditorSceneManager.sceneSaved += OnSceneSaved;
+            AssetDatabase.importPackageCompleted -= OnImportPackageCompleted;
+            AssetDatabase.importPackageCompleted += OnImportPackageCompleted;
+            EditorApplication.projectChanged -= InvalidateGatherCache;
+            EditorApplication.projectChanged += InvalidateGatherCache;
+        }
+
+        private static void OnSceneSaved(UnityEngine.SceneManagement.Scene _) => InvalidateGatherCache();
+        private static void OnImportPackageCompleted(string _) => InvalidateGatherCache();
+
+        public static void InvalidateGatherCache()
+        {
+            _cachedData = null;
+            _cachedKey = null;
+        }
+
+        private static string ComputeGatherCacheKey(ContextOptions options)
+        {
+            var scene = SceneManager.GetActiveScene();
+            string sceneGuid = AssetDatabase.AssetPathToGUID(scene.path ?? "") ?? scene.name;
+            // 2-second bucket: same scene state within 2s returns cached data
+            long bucket = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 2;
+            // Include selection so a different selected object produces a different key
+            string sel = "";
+            if (Selection.activeGameObject != null)
+                sel = Selection.activeGameObject.name;
+            else if (Selection.activeObject != null)
+                sel = AssetDatabase.GetAssetPath(Selection.activeObject) ?? Selection.activeObject.name;
+            // Encode option flags that affect which data is gathered
+            int optBits = (options.includeSceneHierarchy ? 1 : 0)
+                        | (options.includeScriptsList    ? 2 : 0)
+                        | (options.includeProjectInfo    ? 4 : 0)
+                        | (options.includeScriptsContent ? 8 : 0)
+                        | (options.includePackages       ? 16 : 0);
+            return $"{sceneGuid}:{sel}:{bucket}:{optBits}";
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         /// <summary>
         /// Phase-0 instrumentation. Milliseconds spent in each GatherRawData sub-step.
         /// Updated by GatherRawData on every call; read by the HTTP bridge to surface
@@ -241,6 +291,14 @@ namespace GladeAgenticAI.Services
 
         public static UnityProjectData GatherRawData(ContextOptions options)
         {
+            // Phase 1.3: Return cached result if the project state hasn't changed
+            string cacheKey = ComputeGatherCacheKey(options);
+            if (_cachedData != null && _cachedKey == cacheKey)
+            {
+                LastGatherTimings = default; // timings not meaningful for a cache hit
+                return _cachedData;
+            }
+
             var data = new UnityProjectData();
             var timings = new GatherTimings();
             var swTotal = Stopwatch.StartNew();
@@ -298,6 +356,11 @@ namespace GladeAgenticAI.Services
             swTotal.Stop();
             timings.totalMs = swTotal.Elapsed.TotalMilliseconds;
             LastGatherTimings = timings;
+
+            // Phase 1.3: Cache result for subsequent calls within the same 2s window
+            _cachedData = data;
+            _cachedKey = cacheKey;
+
             return data;
         }
 

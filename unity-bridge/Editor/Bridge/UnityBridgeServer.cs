@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.Compilation;
 using UnityEngine;
@@ -1470,10 +1471,26 @@ namespace GladeAgenticAI.Bridge
         }
 
         /// <summary>
-        /// Send JSON response
+        /// Phase 2.2 feature flag: when true, response write + close is pushed to a background
+        /// Task so the Unity main thread is freed to process the next queued request sooner.
+        /// Serialization (JsonUtility.ToJson) stays on the main thread because Unity's JSON
+        /// serializer is not guaranteed thread-safe for Unity objects.
+        ///
+        /// Toggle via Unity EditorPrefs key "GladeAI.OffloadSerialization" (default: true).
+        /// Set to false to restore the previous fully-synchronous behavior.
+        /// </summary>
+        private static bool OffloadSerializationEnabled
+        {
+            get { return EditorPrefs.GetBool("GladeAI.OffloadSerialization", true); }
+        }
+
+        /// <summary>
+        /// Send JSON response. Serialization happens on the current thread; the blocking
+        /// stream write + Close are offloaded to a background Task when the feature flag is on.
         /// </summary>
         private static void SendJson(HttpListenerResponse response, object obj)
         {
+            // Serialize on the calling (main) thread — JsonUtility is not guaranteed thread-safe.
             string json = JsonUtility.ToJson(obj);
             byte[] buffer = Encoding.UTF8.GetBytes(json);
 
@@ -1481,8 +1498,44 @@ namespace GladeAgenticAI.Bridge
             response.ContentLength64 = buffer.Length;
             response.StatusCode = 200;
 
-            response.OutputStream.Write(buffer, 0, buffer.Length);
-            response.Close();
+            WriteAndClose(response, buffer);
+        }
+
+        /// <summary>
+        /// Write a pre-built response body + close the HTTP response, optionally off the main thread.
+        /// Captured variables are all primitives / byte[], safe for background use.
+        /// </summary>
+        private static void WriteAndClose(HttpListenerResponse response, byte[] buffer)
+        {
+            if (OffloadSerializationEnabled)
+            {
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        response.OutputStream.Write(buffer, 0, buffer.Length);
+                    }
+                    catch (Exception e)
+                    {
+                        Debug.LogWarning($"[UnityBridge] Background response write failed: {e.Message}");
+                    }
+                    finally
+                    {
+                        try { response.Close(); } catch { /* client may have disconnected */ }
+                    }
+                });
+            }
+            else
+            {
+                try
+                {
+                    response.OutputStream.Write(buffer, 0, buffer.Length);
+                }
+                finally
+                {
+                    response.Close();
+                }
+            }
         }
 
         /// <summary>
@@ -1532,7 +1585,8 @@ namespace GladeAgenticAI.Bridge
         }
 
         /// <summary>
-        /// Send error response
+        /// Send error response. Serialization stays on the calling thread; the write is
+        /// offloaded when OffloadSerializationEnabled is true (see SendJson).
         /// </summary>
         private static void SendError(HttpListenerResponse response, int statusCode, string message)
         {
@@ -1544,8 +1598,7 @@ namespace GladeAgenticAI.Bridge
             response.ContentLength64 = buffer.Length;
             response.StatusCode = statusCode;
 
-            response.OutputStream.Write(buffer, 0, buffer.Length);
-            response.Close();
+            WriteAndClose(response, buffer);
         }
 
         /// <summary>UTC time of the last request received by the bridge, or DateTime.MinValue if none.</summary>
