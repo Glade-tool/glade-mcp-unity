@@ -187,6 +187,8 @@ All 230+ tools are dispatchable. Claude Code sees ~80 curated core tools by defa
 
 **7 MCP resources:** Bridge health, project context, scene hierarchy, project scripts, current selection, GLADE.md, and session memory.
 
+</details>
+
 <details>
 <summary><strong>GLADE.md</strong></summary>
 
