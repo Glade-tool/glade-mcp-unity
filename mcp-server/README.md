@@ -4,6 +4,8 @@ Connect Cursor, Claude Code, Windsurf, Claude Desktop, and VS Code to your Unity
 
 **230+ tools.** A full Unity-aware system prompt. GLADE.md project context. Script semantic search. Skill calibration. Cloud intelligence layer with RAG and cross-session memory. All core features are free and local.
 
+![GladeKit MCP Demo](GladeKitMCP_DemoGIF.gif)
+
 ---
 
 ## Quick Start
@@ -172,9 +174,10 @@ All core features are **free and local**. The cloud intelligence layer is option
 
 ---
 
-**Features**
+## Features
 
-### 230+ tools across 15 categories
+<details>
+<summary><strong>230+ tools across 15 categories</strong></summary>
 
 Scene • GameObjects • Scripts • Prefabs • Materials • Lighting • VFX & Audio • Animation • IK • Physics • Camera • UI • Input System • Terrain & NavMesh • Profiler
 
@@ -184,11 +187,8 @@ All 230+ tools are dispatchable. Claude Code sees ~80 curated core tools by defa
 
 **7 MCP resources:** Bridge health, project context, scene hierarchy, project scripts, current selection, GLADE.md, and session memory.
 
-### Testing & Verification
-
-See [TESTING.md](TESTING.md) for a complete guide to verifying that GladeKit works correctly with your setup. Includes smoke tests, golden-path workflows, and troubleshooting steps.
-
-### GLADE.md
+<details>
+<summary><strong>GLADE.md</strong></summary>
 
 Create a `GLADE.md` file in your Unity project root. The MCP server reads it and injects it into every request. Works as a permanent context layer: your game's design intent, conventions, and constraints are always in scope.
 
@@ -201,7 +201,10 @@ Art style: pixel art, 16x16 sprites
 Naming: PascalCase for scripts, snake_case for folders
 ```
 
-### Script semantic search
+</details>
+
+<details>
+<summary><strong>Script semantic search</strong></summary>
 
 Set `OPENAI_API_KEY` in your MCP config's `env` field and the server ranks project scripts by semantic similarity to your query. Ask "how does the enemy spawn?" and the right script surfaces — even if it's not named `EnemySpawner`.
 
@@ -221,11 +224,17 @@ Everything needed ships with the package; no install flags or extras required. G
 
 Without the key, `search_project_scripts` still returns scripts - just unranked. Keys are never sent anywhere except OpenAI's embedding endpoint.
 
-### Skill calibration
+</details>
+
+<details>
+<summary><strong>Skill calibration</strong></summary>
 
 The server tracks vocabulary across your messages and detects whether you're a Unity beginner or expert. Beginners get plain-language explanations and encouraging framing. Experts get terse, technical responses. Calibration persists to `.gladekit/skill_level.json` in your project.
 
-### Cloud intelligence
+</details>
+
+<details>
+<summary><strong>Cloud intelligence</strong></summary>
 
 Set `GLADEKIT_API_KEY` in your MCP config's `env` field to unlock cloud-powered features:
 
@@ -247,7 +256,10 @@ All cloud features degrade gracefully: if the key is missing or the cloud is unr
 }
 ```
 
-### Transports (stdio + streamable HTTP)
+</details>
+
+<details>
+<summary><strong>Transports (stdio + streamable HTTP)</strong></summary>
 
 GladeKit MCP supports two transports. **stdio is the default** and works with all MCP clients - every config above uses stdio.
 
@@ -284,15 +296,21 @@ Endpoints:
 }
 ```
 
-### Environment Variables
+</details>
 
-| Variable           | Required | Description                                                             |
-| ------------------ | -------- | ----------------------------------------------------------------------- |
-| `UNITY_BRIDGE_URL` | No       | Unity bridge URL (default: `http://localhost:8765`)                     |
+<details>
+<summary><strong>Environment Variables</strong></summary>
+
+| Variable           | Required | Description                                                                                     |
+| ------------------ | -------- | ----------------------------------------------------------------------------------------------- |
+| `UNITY_BRIDGE_URL` | No       | Unity bridge URL (default: `http://localhost:8765`)                                             |
 | `OPENAI_API_KEY`   | No       | Enables script semantic search via embeddings ([get one](https://platform.openai.com/api-keys)) |
-| `GLADEKIT_API_KEY` | No       | Enables RAG knowledge base, cross-session memory, convention extraction |
+| `GLADEKIT_API_KEY` | No       | Enables RAG knowledge base, cross-session memory, convention extraction                         |
 
-### Troubleshooting
+</details>
+
+<details>
+<summary><strong>Troubleshooting</strong></summary>
 
 **Bridge not connecting**
 
@@ -321,7 +339,10 @@ Endpoints:
 - Alternative: use `pip install gladekit-mcp` and set the command to `"python"` with args `["-m", "gladekit_mcp"]` - avoids the `uvx` PATH dependency
 - Validate outside Unity first: run `uvx gladekit-mcp` in a terminal (you should see the `gladekit-mcp v...` banner on stderr)
 
-### Architecture
+</details>
+
+<details>
+<summary><strong>Architecture</strong></summary>
 
 ```
 [AI Client: Cursor / Claude Code / Windsurf / Claude Desktop / Unity AI Gateway]
@@ -342,7 +363,10 @@ Endpoints:
     UnityContextGatherer -> scene, scripts, packages, render pipeline
 ```
 
-### Contributing
+</details>
+
+<details>
+<summary><strong>Contributing</strong></summary>
 
 The Unity bridge (`unity-bridge/`) is the source of truth for C# tools. Adding a tool requires two files:
 
@@ -365,6 +389,8 @@ public class MyTool : ITool
 Add an entry to the category's tool list following the existing format (OpenAI function-calling schema).
 
 Tools are auto-discovered via reflection - no registration needed beyond these two files.
+
+</details>
 
 ---
 
