@@ -4,8 +4,9 @@ Regression and capability test suite for the MCP server and Unity bridge
 integration. Tests the complete dispatch path: MCP tool call → bridge HTTP →
 Unity response, using a mock Unity bridge (no real Unity instance needed).
 
-Complements the Proxy eval harness (`Assets/Editor/GladeAgenticAI/Proxy/eval/`)
-which tests the cloud backend's agentic loop.
+Scope: this harness covers the MCP server's tool dispatch surface. The
+GladeKit App ships its own separate harness for end-to-end agentic-loop
+testing.
 
 ---
 

@@ -221,7 +221,7 @@ TOOLS: List[Dict] = [
         "type": "function",
         "function": {
             "name": "get_unity_console_logs",
-            "description": "Get all Unity Editor console log entries (errors, warnings, and logs), capped at 2000. Use to debug issues, see runtime or compile errors, or when the user asks to read the console or logs. Do NOT call proactively after every action — only call when a previous tool returned an error or the user explicitly asks to check the console.",
+            "description": "Read Unity Editor runtime/play-mode console entries (Debug.Log, runtime exceptions, MonoBehaviour errors). Returns up to 2000 entries. NOT for verifying script compilation — compile_scripts already returns errorCount + per-error file/line/source-context. Calling this after a clean compile (errorCount=0) is forbidden. Valid uses: (a) compile_scripts returned errorCount>0 AND you need extra runtime context, (b) a non-compile tool returned an error you must debug, (c) the user explicitly asked to check the console / read the logs.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },

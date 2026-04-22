@@ -108,7 +108,7 @@ TOOLS: List[Dict] = [
         "type": "function",
         "function": {
             "name": "search_scripts",
-            "description": "Search script contents for a query string and return matching script paths. Use sparingly for troubleshooting or when the target script name is unknown.",
+            "description": "Full-text grep across all script CONTENTS for a literal substring (e.g., 'NavMeshAgent', 'OnTriggerEnter', 'speed = '). Returns script paths whose source contains the query. Use ONLY for content search. Do NOT use for: (a) finding scripts by file/class name — use find_scripts; (b) looking up names of other tools or APIs; (c) generic 'find me X' fallbacks. If find_scripts already returned results, do not also call search_scripts for the same target.",
             "parameters": {
                 "type": "object",
                 "properties": {
