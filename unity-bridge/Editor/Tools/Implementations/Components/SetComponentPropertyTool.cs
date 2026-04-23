@@ -164,9 +164,18 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Components
                 return ToolUtils.CreateErrorResponse($"Component '{componentType}' not found on '{gameObjectPath}'");
             }
             
-            // Use reflection to set the property
+            // Resolve property name. The model may pass any of:
+            //   - C# property/field name ("mass", "receiveShadows")       → reflection
+            //   - Case-variant ("Mass", "ReceiveShadows")                  → reflection w/ IgnoreCase
+            //   - Serialized internal name ("m_Mass", "m_ReceiveShadows")  → SerializedObject.FindProperty
+            // The last path matters for built-in Unity C++ components (MeshRenderer, Rigidbody)
+            // whose m_* fields aren't exposed to reflection — this is what
+            // get_component_inspector_properties returns as `internalName`.
             var bindingFlags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
-            var prop = type.GetProperty(propertyName, bindingFlags);
+            var bindingFlagsIgnoreCase = bindingFlags | System.Reflection.BindingFlags.IgnoreCase;
+
+            var prop = type.GetProperty(propertyName, bindingFlags)
+                    ?? type.GetProperty(propertyName, bindingFlagsIgnoreCase);
             if (prop != null && prop.CanWrite)
             {
                 try
@@ -174,24 +183,25 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Components
                     // Check if this is a list/array and we want to append
                     if (appendToList && IsListOrArrayType(prop.PropertyType))
                     {
-                        return AppendToListProperty(comp, propertyName, valueStr, prop.PropertyType, gameObjectPath, componentType);
+                        return AppendToListProperty(comp, prop.Name, valueStr, prop.PropertyType, gameObjectPath, componentType);
                     }
-                    
+
                     object convertedValue = ToolUtils.ConvertValueToPropertyType(valueStr, prop.PropertyType);
-                    Undo.RecordObject(comp, $"Set Property: {gameObjectPath}.{componentType}.{propertyName}");
+                    Undo.RecordObject(comp, $"Set Property: {gameObjectPath}.{componentType}.{prop.Name}");
                     prop.SetValue(comp, convertedValue);
                     EditorUtility.SetDirty(comp);
-                    
-                    return ToolUtils.CreateSuccessResponse($"Set property '{propertyName}' on '{componentType}' of '{gameObjectPath}' to '{valueStr}'");
+
+                    return ToolUtils.CreateSuccessResponse($"Set property '{prop.Name}' on '{componentType}' of '{gameObjectPath}' to '{valueStr}'");
                 }
                 catch (Exception e)
                 {
                     return ToolUtils.CreateErrorResponse($"Failed to set property: {e.Message}");
                 }
             }
-            
+
             // Try field if property not found (some components may have serialized fields)
-            var field = type.GetField(propertyName, bindingFlags);
+            var field = type.GetField(propertyName, bindingFlags)
+                    ?? type.GetField(propertyName, bindingFlagsIgnoreCase);
             if (field != null && !field.IsLiteral && !field.IsInitOnly)
             {
                 try
@@ -199,22 +209,29 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Components
                     // Check if this is a list/array and we want to append
                     if (appendToList && IsListOrArrayType(field.FieldType))
                     {
-                        return AppendToListField(comp, propertyName, valueStr, field.FieldType, gameObjectPath, componentType);
+                        return AppendToListField(comp, field.Name, valueStr, field.FieldType, gameObjectPath, componentType);
                     }
-                    
+
                     object convertedValue = ToolUtils.ConvertValueToPropertyType(valueStr, field.FieldType);
-                    Undo.RecordObject(comp, $"Set Field: {gameObjectPath}.{componentType}.{propertyName}");
+                    Undo.RecordObject(comp, $"Set Field: {gameObjectPath}.{componentType}.{field.Name}");
                     field.SetValue(comp, convertedValue);
                     EditorUtility.SetDirty(comp);
-                    
-                    return ToolUtils.CreateSuccessResponse($"Set field '{propertyName}' on '{componentType}' of '{gameObjectPath}' to '{valueStr}'");
+
+                    return ToolUtils.CreateSuccessResponse($"Set field '{field.Name}' on '{componentType}' of '{gameObjectPath}' to '{valueStr}'");
                 }
                 catch (Exception e)
                 {
                     return ToolUtils.CreateErrorResponse($"Failed to set field: {e.Message}");
                 }
             }
-            
+
+            // SerializedObject fallback — the path that rescues m_* internal names on
+            // built-in C++ components. Also covers MonoBehaviours whose [SerializeField]
+            // private fields aren't findable via reflection on the derived type.
+            var serializedResult = TrySetViaSerializedObject(
+                comp, propertyName, valueStr, appendToList, gameObjectPath, componentType);
+            if (serializedResult != null) return serializedResult;
+
             // List available properties/fields for helpful error message
             var availableProperties = type.GetProperties(bindingFlags)
                 .Where(p => p.CanWrite)
@@ -225,12 +242,188 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Components
                 .Select(f => f.Name)
                 .ToList();
             var availableNames = availableProperties.Concat(availableFields).Distinct().ToList();
-            
-            string availableList = availableNames.Count > 0
-                ? $" Available properties/fields on '{componentType}': {string.Join(", ", availableNames)}"
-                : " No writable properties or fields found.";
-            
-            return ToolUtils.CreateErrorResponse($"Property or field '{propertyName}' not found or not writable on '{componentType}'.{availableList}");
+
+            // Also surface serialized-property names so the model can retry with one that exists.
+            var serializedNames = new List<string>();
+            try
+            {
+                var so = new SerializedObject(comp);
+                var iter = so.GetIterator();
+                bool enterChildren = true;
+                while (iter.NextVisible(enterChildren))
+                {
+                    enterChildren = false;
+                    if (iter.name != "m_Script") serializedNames.Add(iter.name);
+                }
+            }
+            catch { /* surface whatever we have */ }
+
+            var availableList = availableNames.Count > 0
+                ? $" Reflection-visible on '{componentType}': {string.Join(", ", availableNames)}."
+                : "";
+            var serializedList = serializedNames.Count > 0
+                ? $" Serialized on '{componentType}': {string.Join(", ", serializedNames)}."
+                : "";
+
+            return ToolUtils.CreateErrorResponse(
+                $"Property or field '{propertyName}' not found or not writable on '{componentType}'.{availableList}{serializedList}");
+        }
+
+        /// <summary>
+        /// Fallback setter that routes through SerializedObject/SerializedProperty.
+        /// Resolves m_* internal names on built-in C++ components (MeshRenderer,
+        /// Rigidbody, etc.) and serialized private fields on MonoBehaviours that
+        /// reflection on the derived type can't see. Returns a response string on
+        /// hit, or null to let the caller surface the "not found" error.
+        /// </summary>
+        private string TrySetViaSerializedObject(
+            Component comp,
+            string propertyName,
+            string valueStr,
+            bool appendToList,
+            string gameObjectPath,
+            string componentType)
+        {
+            try
+            {
+                var so = new SerializedObject(comp);
+                // Exact match first; then case-insensitive walk of the top-level iterator.
+                var spExact = so.FindProperty(propertyName);
+                SerializedProperty sp = spExact;
+                if (sp == null)
+                {
+                    var iter = so.GetIterator();
+                    bool enterChildren = true;
+                    while (iter.NextVisible(enterChildren))
+                    {
+                        enterChildren = false;
+                        if (string.Equals(iter.name, propertyName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            sp = so.FindProperty(iter.propertyPath);
+                            break;
+                        }
+                    }
+                }
+                if (sp == null) return null;
+
+                if (appendToList && sp.isArray)
+                {
+                    // Reuse the existing list-append machinery by reconstructing a
+                    // stub element type from the SerializedProperty. For simplicity
+                    // we defer to the reflection-based path when possible; otherwise
+                    // grow the array and write the raw string.
+                    sp.arraySize += 1;
+                    var element = sp.GetArrayElementAtIndex(sp.arraySize - 1);
+                    ApplySerializedValue(element, valueStr);
+                    so.ApplyModifiedProperties();
+                    EditorUtility.SetDirty(comp);
+                    return ToolUtils.CreateSuccessResponse(
+                        $"Appended 1 item to serialized list '{sp.name}' on '{componentType}' of '{gameObjectPath}'");
+                }
+
+                Undo.RecordObject(comp, $"Set Serialized: {gameObjectPath}.{componentType}.{sp.name}");
+                if (!ApplySerializedValue(sp, valueStr))
+                {
+                    return ToolUtils.CreateErrorResponse(
+                        $"Could not convert value '{valueStr}' to serialized property '{sp.name}' " +
+                        $"(type {sp.propertyType}) on '{componentType}'.");
+                }
+                so.ApplyModifiedProperties();
+                EditorUtility.SetDirty(comp);
+                return ToolUtils.CreateSuccessResponse(
+                    $"Set serialized property '{sp.name}' on '{componentType}' of '{gameObjectPath}' to '{valueStr}'");
+            }
+            catch (Exception e)
+            {
+                return ToolUtils.CreateErrorResponse($"Failed to set via SerializedObject: {e.Message}");
+            }
+        }
+
+        /// <summary>Apply a string value to a SerializedProperty using its declared type.</summary>
+        private static bool ApplySerializedValue(SerializedProperty sp, string valueStr)
+        {
+            switch (sp.propertyType)
+            {
+                case SerializedPropertyType.Boolean:
+                    if (bool.TryParse(valueStr, out var bv)) { sp.boolValue = bv; return true; }
+                    return false;
+                case SerializedPropertyType.Integer:
+                case SerializedPropertyType.LayerMask:
+                case SerializedPropertyType.Character:
+                    if (int.TryParse(valueStr, out var iv)) { sp.intValue = iv; return true; }
+                    return false;
+                case SerializedPropertyType.Float:
+                    if (float.TryParse(valueStr,
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out var fv))
+                    { sp.floatValue = fv; return true; }
+                    return false;
+                case SerializedPropertyType.String:
+                    sp.stringValue = valueStr; return true;
+                case SerializedPropertyType.Enum:
+                {
+                    // Accept either the enum name ("Off") or its integer index ("0").
+                    if (int.TryParse(valueStr, out var enumIdx)
+                        && enumIdx >= 0 && sp.enumNames != null && enumIdx < sp.enumNames.Length)
+                    {
+                        sp.enumValueIndex = enumIdx;
+                        return true;
+                    }
+                    if (sp.enumNames != null)
+                    {
+                        for (int i = 0; i < sp.enumNames.Length; i++)
+                        {
+                            if (string.Equals(sp.enumNames[i], valueStr, StringComparison.OrdinalIgnoreCase))
+                            {
+                                sp.enumValueIndex = i;
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                }
+                case SerializedPropertyType.Color:
+                    try { sp.colorValue = ToolUtils.ParseColor(valueStr); return true; } catch { return false; }
+                case SerializedPropertyType.Vector2:
+                {
+                    try { var v = ToolUtils.ParseVector3(valueStr); sp.vector2Value = new Vector2(v.x, v.y); return true; } catch { return false; }
+                }
+                case SerializedPropertyType.Vector3:
+                    try { sp.vector3Value = ToolUtils.ParseVector3(valueStr); return true; } catch { return false; }
+                case SerializedPropertyType.Vector4:
+                {
+                    try
+                    {
+                        var v = ToolUtils.ParseVector3(valueStr);
+                        sp.vector4Value = new Vector4(v.x, v.y, v.z, 0f);
+                        return true;
+                    }
+                    catch { return false; }
+                }
+                case SerializedPropertyType.Quaternion:
+                {
+                    try
+                    {
+                        var euler = ToolUtils.ParseVector3(valueStr);
+                        sp.quaternionValue = Quaternion.Euler(euler);
+                        return true;
+                    }
+                    catch { return false; }
+                }
+                case SerializedPropertyType.ObjectReference:
+                {
+                    var trimmed = valueStr?.Trim().Trim('"') ?? "";
+                    if (string.IsNullOrEmpty(trimmed)) { sp.objectReferenceValue = null; return true; }
+                    var asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(trimmed);
+                    if (asset != null) { sp.objectReferenceValue = asset; return true; }
+                    var go = ToolUtils.FindGameObjectByPath(trimmed);
+                    if (go != null) { sp.objectReferenceValue = go; return true; }
+                    return false;
+                }
+                default:
+                    return false;
+            }
         }
         
         /// <summary>
