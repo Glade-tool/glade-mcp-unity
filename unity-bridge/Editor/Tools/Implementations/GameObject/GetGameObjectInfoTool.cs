@@ -19,22 +19,23 @@ namespace GladeAgenticAI.Core.Tools.Implementations.GameObject
             var transform = obj.transform;
             var pos = transform.position;
             var rot = transform.rotation.eulerAngles;
-            var scale = transform.localScale; // Scale is always local
+            var worldScale = transform.lossyScale;
+            var localScale = transform.localScale;
             var localPos = transform.localPosition;
             var localRot = transform.localRotation.eulerAngles;
-            
+
             var info = new Dictionary<string, object>
             {
                 ["name"] = obj.name,
                 ["active"] = obj.activeSelf,
-                // World transform
+                // World transform (lossy world scale; localScale is what's usually editable)
                 ["position"] = $"{pos.x},{pos.y},{pos.z}",
                 ["rotation"] = $"{rot.x},{rot.y},{rot.z}",
-                ["scale"] = $"{scale.x},{scale.y},{scale.z}",
+                ["scale"] = $"{worldScale.x},{worldScale.y},{worldScale.z}",
                 // Local transform
                 ["localPosition"] = $"{localPos.x},{localPos.y},{localPos.z}",
                 ["localRotation"] = $"{localRot.x},{localRot.y},{localRot.z}",
-                ["localScale"] = $"{scale.x},{scale.y},{scale.z}",
+                ["localScale"] = $"{localScale.x},{localScale.y},{localScale.z}",
                 ["components"] = new List<string>()
             };
             foreach (var comp in obj.GetComponents<Component>())
@@ -94,11 +95,16 @@ namespace GladeAgenticAI.Core.Tools.Implementations.GameObject
                     terrainInfo["terrainDataPath"] = terrainDataPath;
                 }
                 
-                // Get prototype data from terrain
+                // Get prototype data from terrain. Dense terrains can hold hundreds of
+                // tree prototypes with nested prefab/material metadata — cap the list so
+                // a single terrain object can't drown the response.
+                const int TreePrototypeCap = 10;
                 var treePrototypes = new List<Dictionary<string, object>>();
-                if (terrain.terrainData.treePrototypes != null)
+                int treeTotal = terrain.terrainData.treePrototypes?.Length ?? 0;
+                if (treeTotal > 0)
                 {
-                    for (int i = 0; i < terrain.terrainData.treePrototypes.Length; i++)
+                    int shown = System.Math.Min(treeTotal, TreePrototypeCap);
+                    for (int i = 0; i < shown; i++)
                     {
                         var proto = terrain.terrainData.treePrototypes[i];
                         var protoInfo = new Dictionary<string, object>
@@ -106,7 +112,7 @@ namespace GladeAgenticAI.Core.Tools.Implementations.GameObject
                             ["index"] = i,
                             ["bendFactor"] = proto.bendFactor
                         };
-                        
+
                         // Get prefab path if available
                         if (proto.prefab != null)
                         {
@@ -117,25 +123,16 @@ namespace GladeAgenticAI.Core.Tools.Implementations.GameObject
                                     prefabPath = prefabPath.Substring(7);
                                 protoInfo["prefabPath"] = prefabPath;
                             }
-                            
-                            // Get material from prefab renderer if available
-                            Renderer prefabRenderer = proto.prefab.GetComponent<Renderer>();
-                            if (prefabRenderer != null && prefabRenderer.sharedMaterial != null)
-                            {
-                                string matPath = AssetDatabase.GetAssetPath(prefabRenderer.sharedMaterial);
-                                if (!string.IsNullOrEmpty(matPath))
-                                {
-                                    if (matPath.StartsWith("Assets/", System.StringComparison.OrdinalIgnoreCase))
-                                        matPath = matPath.Substring(7);
-                                    protoInfo["materialPath"] = matPath;
-                                }
-                                protoInfo["shaderName"] = prefabRenderer.sharedMaterial.shader.name;
-                            }
                         }
                         treePrototypes.Add(protoInfo);
                     }
                 }
                 terrainInfo["treePrototypes"] = treePrototypes;
+                if (treeTotal > TreePrototypeCap)
+                {
+                    terrainInfo["treePrototypesTruncated"] = true;
+                    terrainInfo["treePrototypeTotal"] = treeTotal;
+                }
                 info["terrain"] = terrainInfo;
             }
             

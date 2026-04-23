@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using GladeAgenticAI.Core.Tools;
@@ -15,139 +16,216 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Materials
             string materialPath = args.ContainsKey("materialPath") ? args["materialPath"].ToString() : "";
             string propertyName = args.ContainsKey("propertyName") ? args["propertyName"].ToString() : "";
             string valueStr = args.ContainsKey("value") ? args["value"].ToString() : "";
-            
+
             if (string.IsNullOrEmpty(materialPath))
             {
                 return ToolUtils.CreateErrorResponse("materialPath is required");
             }
-            
+
             if (string.IsNullOrEmpty(propertyName))
             {
                 return ToolUtils.CreateErrorResponse("propertyName is required");
             }
-            
+
             if (string.IsNullOrEmpty(valueStr))
             {
                 return ToolUtils.CreateErrorResponse("value is required");
             }
-            
+
             // Ensure path starts with Assets/
             if (!materialPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
             {
                 materialPath = "Assets/" + materialPath;
             }
-            
+
             // Load material
             Material mat = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
             if (mat == null)
             {
                 return ToolUtils.CreateErrorResponse($"Material not found at '{materialPath}'");
             }
-            
+
+            // Resolve propertyName to the shader's canonical form. Models often send
+            // "baseColor" / "BaseColor" when the shader actually exposes "_BaseColor",
+            // or send "_basecolor" with wrong casing. Resolving before dispatch means
+            // mat.SetColor/SetFloat/etc. hit a real property and don't silently no-op.
+            string canonicalName = ResolveShaderPropertyName(mat, propertyName);
+            if (canonicalName == null)
+            {
+                return ToolUtils.CreateErrorResponse(
+                    $"Property '{propertyName}' not found on shader '{mat.shader.name}'. " + DescribeShaderProperties(mat));
+            }
+
             try
             {
-                Undo.RecordObject(mat, $"Set Material Property: {materialPath}.{propertyName}");
-                
-                // Try to set as shader property first (most common case)
-                if (mat.HasProperty(propertyName))
+                Undo.RecordObject(mat, $"Set Material Property: {materialPath}.{canonicalName}");
+
+                ShaderUtil.ShaderPropertyType propType = GetShaderPropertyType(mat, canonicalName);
+                bool applied = ApplyByShaderType(mat, canonicalName, valueStr, propType, out string parseError);
+                if (!applied)
                 {
-                    // Try different property types based on value format
-                    // Try Color first (format: "r,g,b,a" or "r,g,b")
-                    if (valueStr.Contains(","))
-                    {
-                        string[] parts = valueStr.Split(',');
-                        // If it has 3-4 comma-separated values, try as color
-                        if (parts.Length >= 3 && parts.Length <= 4)
-                        {
-                            try
-                            {
-                                Color color = ToolUtils.ParseColor(valueStr);
-                                mat.SetColor(propertyName, color);
-                            }
-                            catch
-                            {
-                                // Not a color, try as vector
-                                try
-                                {
-                                    Vector4 vec = ToolUtils.ParseVector4(valueStr);
-                                    mat.SetVector(propertyName, vec);
-                                }
-                                catch
-                                {
-                                    return ToolUtils.CreateErrorResponse($"Failed to parse value '{valueStr}' as color or vector");
-                                }
-                            }
-                        }
-                        else if (parts.Length == 2)
-                        {
-                            // Vector2
-                            try
-                            {
-                                var vec3 = ToolUtils.ParseVector3(valueStr + ",0");
-                                mat.SetVector(propertyName, new Vector2(vec3.x, vec3.y));
-                            }
-                            catch
-                            {
-                                return ToolUtils.CreateErrorResponse($"Failed to parse value '{valueStr}' as Vector2");
-                            }
-                        }
-                    }
-                    // Try Texture (valueStr is a path ending with image extension)
-                    else if (valueStr.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
-                             valueStr.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
-                             valueStr.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
-                             valueStr.EndsWith(".tga", StringComparison.OrdinalIgnoreCase) ||
-                             valueStr.EndsWith(".exr", StringComparison.OrdinalIgnoreCase))
-                    {
-                        string texturePath = valueStr;
-                        if (!texturePath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
-                        {
-                            texturePath = "Assets/" + texturePath;
-                        }
-                        Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
-                        if (texture == null)
-                        {
-                            return ToolUtils.CreateErrorResponse($"Texture not found at '{texturePath}'");
-                        }
-                        mat.SetTexture(propertyName, texture);
-                    }
-                    // Try Float (single numeric value)
-                    else
-                    {
-                        if (float.TryParse(valueStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float floatValue))
-                        {
-                            mat.SetFloat(propertyName, floatValue);
-                        }
-                        else
-                        {
-                            return ToolUtils.CreateErrorResponse($"Failed to parse value '{valueStr}' as float, color, vector, or texture path");
-                        }
-                    }
+                    return ToolUtils.CreateErrorResponse(
+                        $"Failed to apply value '{valueStr}' to shader property '{canonicalName}' (type {propType}): {parseError}");
                 }
-                else
-                {
-                    // Try setting as Material property via reflection
-                    var prop = typeof(Material).GetProperty(propertyName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-                    if (prop != null && prop.CanWrite)
-                    {
-                        object convertedValue = ToolUtils.ConvertValueToPropertyType(valueStr, prop.PropertyType);
-                        prop.SetValue(mat, convertedValue);
-                    }
-                    else
-                    {
-                        return ToolUtils.CreateErrorResponse($"Property '{propertyName}' not found on material or shader");
-                    }
-                }
-                
+
                 EditorUtility.SetDirty(mat);
                 AssetDatabase.SaveAssets();
-                
-                return ToolUtils.CreateSuccessResponse($"Set property '{propertyName}' on material '{materialPath}' to '{valueStr}'");
+
+                return ToolUtils.CreateSuccessResponse(
+                    $"Set property '{canonicalName}' on material '{materialPath}' to '{valueStr}'");
             }
             catch (Exception e)
             {
                 return ToolUtils.CreateErrorResponse($"Failed to set material property: {e.Message}");
             }
+        }
+
+        /// <summary>
+        /// Resolve the model's propertyName against the shader's actual property list.
+        /// Tries exact match, an underscore-prefixed variant, and a case-insensitive
+        /// walk of ShaderUtil.GetPropertyName(). Returns the canonical shader property
+        /// name, or null if no match.
+        /// </summary>
+        private static string ResolveShaderPropertyName(Material mat, string propertyName)
+        {
+            if (mat.HasProperty(propertyName)) return propertyName;
+
+            if (!propertyName.StartsWith("_"))
+            {
+                string withUnderscore = "_" + propertyName;
+                if (mat.HasProperty(withUnderscore)) return withUnderscore;
+            }
+
+            var shader = mat.shader;
+            if (shader == null) return null;
+            int count = ShaderUtil.GetPropertyCount(shader);
+            for (int i = 0; i < count; i++)
+            {
+                string name = ShaderUtil.GetPropertyName(shader, i);
+                if (string.Equals(name, propertyName, StringComparison.OrdinalIgnoreCase))
+                    return name;
+                // Compare ignoring any leading underscore on either side.
+                if (string.Equals(name.TrimStart('_'), propertyName.TrimStart('_'), StringComparison.OrdinalIgnoreCase))
+                    return name;
+            }
+            return null;
+        }
+
+        private static ShaderUtil.ShaderPropertyType GetShaderPropertyType(Material mat, string canonicalName)
+        {
+            var shader = mat.shader;
+            int count = ShaderUtil.GetPropertyCount(shader);
+            for (int i = 0; i < count; i++)
+            {
+                if (ShaderUtil.GetPropertyName(shader, i) == canonicalName)
+                    return ShaderUtil.GetPropertyType(shader, i);
+            }
+            // Fallback — shouldn't happen because ResolveShaderPropertyName already matched
+            return ShaderUtil.ShaderPropertyType.Float;
+        }
+
+        /// <summary>
+        /// Apply the string value to the resolved shader property, dispatching on the
+        /// shader's declared property type rather than guessing from the value format.
+        /// </summary>
+        private static bool ApplyByShaderType(
+            Material mat, string name, string valueStr,
+            ShaderUtil.ShaderPropertyType propType, out string parseError)
+        {
+            parseError = null;
+            switch (propType)
+            {
+                case ShaderUtil.ShaderPropertyType.Color:
+                    try { mat.SetColor(name, ToolUtils.ParseColor(valueStr)); return true; }
+                    catch (Exception e) { parseError = e.Message; return false; }
+
+                case ShaderUtil.ShaderPropertyType.Vector:
+                    try
+                    {
+                        // Accept "x,y,z,w", "x,y,z", or "x,y" — pad with zeros.
+                        var parts = valueStr.Split(',');
+                        float x = parts.Length > 0 ? ParseFloat(parts[0]) : 0f;
+                        float y = parts.Length > 1 ? ParseFloat(parts[1]) : 0f;
+                        float z = parts.Length > 2 ? ParseFloat(parts[2]) : 0f;
+                        float w = parts.Length > 3 ? ParseFloat(parts[3]) : 0f;
+                        mat.SetVector(name, new Vector4(x, y, z, w));
+                        return true;
+                    }
+                    catch (Exception e) { parseError = e.Message; return false; }
+
+                case ShaderUtil.ShaderPropertyType.Float:
+                case ShaderUtil.ShaderPropertyType.Range:
+                    if (float.TryParse(valueStr,
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out float f))
+                    {
+                        mat.SetFloat(name, f);
+                        return true;
+                    }
+                    parseError = $"could not parse '{valueStr}' as float";
+                    return false;
+
+                case ShaderUtil.ShaderPropertyType.TexEnv:
+                {
+                    // Accept clear-texture via empty string or "null".
+                    var trimmed = valueStr?.Trim().Trim('"') ?? "";
+                    if (string.IsNullOrEmpty(trimmed) || trimmed.Equals("null", StringComparison.OrdinalIgnoreCase))
+                    {
+                        mat.SetTexture(name, null);
+                        return true;
+                    }
+                    if (!trimmed.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+                        trimmed = "Assets/" + trimmed;
+                    var tex = AssetDatabase.LoadAssetAtPath<Texture>(trimmed);
+                    if (tex == null)
+                    {
+                        parseError = $"texture not found at '{trimmed}'";
+                        return false;
+                    }
+                    mat.SetTexture(name, tex);
+                    return true;
+                }
+
+                default:
+                    parseError = $"unsupported shader property type {propType}";
+                    return false;
+            }
+        }
+
+        private static float ParseFloat(string s)
+        {
+            return float.Parse(s.Trim(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Enumerate the shader's actual properties so an unresolved propertyName
+        /// error gives the model everything it needs to retry with a real name.
+        /// </summary>
+        private static string DescribeShaderProperties(Material mat)
+        {
+            var shader = mat.shader;
+            if (shader == null) return "Shader is null.";
+            int count = ShaderUtil.GetPropertyCount(shader);
+            if (count == 0) return "Shader exposes no properties.";
+
+            var entries = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                string name = ShaderUtil.GetPropertyName(shader, i);
+                var type = ShaderUtil.GetPropertyType(shader, i);
+                entries.Add($"{name} ({type})");
+            }
+            // Cap to avoid drowning the error message on shaders with dozens of props.
+            const int Cap = 30;
+            if (entries.Count > Cap)
+            {
+                var shown = string.Join(", ", entries.Take(Cap));
+                return $"Available shader properties (first {Cap} of {entries.Count}): {shown}.";
+            }
+            return $"Available shader properties: {string.Join(", ", entries)}.";
         }
     }
 }
