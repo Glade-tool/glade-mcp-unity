@@ -94,6 +94,24 @@ TOOLS: List[Dict] = [
     {
         "type": "function",
         "function": {
+            "name": "get_session_summary",
+            "description": "List every mutation made this Unity session grouped by category (scripts, materials, gameObjects, components, etc.) with a timeline. Use to answer 'what did you just do' / 'what changed' without re-reading scene state. Read-only.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "maxTimelineEntries": {
+                        "type": "integer",
+                        "description": "Max recent mutation entries to include. Default 50, max 500.",
+                        "default": 50,
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "think",
             "description": "Reason about a complex multi-step task before executing it. Use to plan what objects/assets/scripts to create, in what order (scripts before add_component), and what positions/configurations are needed. Does not modify anything.",
             "parameters": {

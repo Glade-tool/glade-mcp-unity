@@ -43,6 +43,7 @@ CORE_TOOLS: set[str] = {
     # ── Reasoning / meta ──────────────────────────────────────────────────────
     "think",
     "request_user_input",
+    "get_session_summary",
     # ── Scene & hierarchy ─────────────────────────────────────────────────────
     "get_scene_hierarchy",
     "get_gameobject_info",

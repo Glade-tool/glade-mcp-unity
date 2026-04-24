@@ -15,6 +15,66 @@ namespace GladeAgenticAI.Core.Tools
     public static class ToolUtils
     {
         /// <summary>
+        /// Appends a single JSON value (scalar, list, or nested dict) to the builder.
+        /// Shared between CreateSuccessResponse, CreateErrorResponse, and SerializeDictToJson
+        /// so every extras-producing tool path serializes lists identically — the
+        /// old pattern was "each call site re-handled types and stringified
+        /// List&lt;string&gt; as its type name."
+        /// </summary>
+        private static void AppendJsonValue(StringBuilder sb, object value)
+        {
+            if (value == null) { sb.Append("null"); return; }
+            if (value is string s) { sb.Append('"').Append(EscapeJsonString(s)).Append('"'); return; }
+            if (value is bool b) { sb.Append(b ? "true" : "false"); return; }
+            if (value is int || value is long || value is float || value is double || value is decimal)
+            {
+                sb.Append(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture));
+                return;
+            }
+            if (value is Dictionary<string, object> dict) { sb.Append(SerializeDictToJson(dict)); return; }
+            if (value is IList<string> strList)
+            {
+                sb.Append('[');
+                for (int i = 0; i < strList.Count; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    sb.Append('"').Append(EscapeJsonString(strList[i])).Append('"');
+                }
+                sb.Append(']');
+                return;
+            }
+            if (value is IList<Dictionary<string, object>> dictList)
+            {
+                sb.Append('[');
+                for (int i = 0; i < dictList.Count; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    sb.Append(SerializeDictToJson(dictList[i]));
+                }
+                sb.Append(']');
+                return;
+            }
+            if (value is System.Collections.IEnumerable seq && !(value is string))
+            {
+                sb.Append('[');
+                bool first = true;
+                foreach (var item in seq)
+                {
+                    if (!first) sb.Append(',');
+                    first = false;
+                    AppendJsonValue(sb, item);
+                }
+                sb.Append(']');
+                return;
+            }
+            // Fallback: stringify. Previously this path silently produced
+            // "System.Collections.Generic.List`1[System.String]" for lists
+            // declared as plain object — the IEnumerable branch above catches
+            // those now, so this truly is the "unknown scalar" leaf.
+            sb.Append('"').Append(EscapeJsonString(value.ToString() ?? "")).Append('"');
+        }
+
+        /// <summary>
         /// Generates a standard success JSON response.
         /// </summary>
         public static string CreateSuccessResponse(string message, Dictionary<string, object> extras = null)
@@ -27,18 +87,9 @@ namespace GladeAgenticAI.Core.Tools
             {
                 foreach (var kvp in extras)
                 {
-                    sb.Append(",");
-                    sb.Append($"\"{kvp.Key}\":");
-                    if (kvp.Value is string s)
-                        sb.Append($"\"{EscapeJsonString(s)}\"");
-                    else if (kvp.Value is bool b)
-                        sb.Append(b.ToString().ToLower());
-                    else if (kvp.Value is int || kvp.Value is float || kvp.Value is double)
-                        sb.Append(Convert.ToString(kvp.Value, System.Globalization.CultureInfo.InvariantCulture));
-                    else if (kvp.Value is Dictionary<string, object> dict)
-                        sb.Append(SerializeDictToJson(dict));
-                    else
-                        sb.Append($"\"{EscapeJsonString(kvp.Value?.ToString() ?? "")}\"");
+                    sb.Append(',');
+                    sb.Append('"').Append(kvp.Key).Append("\":");
+                    AppendJsonValue(sb, kvp.Value);
                 }
             }
 
@@ -67,18 +118,9 @@ namespace GladeAgenticAI.Core.Tools
             {
                 foreach (var kvp in extras)
                 {
-                    sb.Append(",");
-                    sb.Append($"\"{kvp.Key}\":");
-                    if (kvp.Value is string s)
-                        sb.Append($"\"{EscapeJsonString(s)}\"");
-                    else if (kvp.Value is bool b)
-                        sb.Append(b.ToString().ToLower());
-                    else if (kvp.Value is int || kvp.Value is float || kvp.Value is double)
-                        sb.Append(Convert.ToString(kvp.Value, System.Globalization.CultureInfo.InvariantCulture));
-                    else if (kvp.Value is Dictionary<string, object> dict)
-                        sb.Append(SerializeDictToJson(dict));
-                    else
-                        sb.Append($"\"{EscapeJsonString(kvp.Value?.ToString() ?? "")}\"");
+                    sb.Append(',');
+                    sb.Append('"').Append(kvp.Key).Append("\":");
+                    AppendJsonValue(sb, kvp.Value);
                 }
             }
 
@@ -134,47 +176,16 @@ namespace GladeAgenticAI.Core.Tools
         public static string SerializeDictToJson(Dictionary<string, object> dict)
         {
             var sb = new StringBuilder();
-            sb.Append("{");
+            sb.Append('{');
             int i = 0;
             foreach (var kvp in dict)
             {
-                if (i > 0) sb.Append(",");
-                sb.Append($"\"{kvp.Key}\":");
-                if (kvp.Value is string s)
-                    sb.Append($"\"{EscapeJsonString(s)}\"");
-                else if (kvp.Value is bool b)
-                    sb.Append(b.ToString().ToLower());
-                else if (kvp.Value is int || kvp.Value is float || kvp.Value is double)
-                    sb.Append(Convert.ToString(kvp.Value, System.Globalization.CultureInfo.InvariantCulture));
-                else if (kvp.Value is List<string> stringList)
-                {
-                    sb.Append("[");
-                    for (int j = 0; j < stringList.Count; j++)
-                    {
-                        if (j > 0) sb.Append(",");
-                        sb.Append($"\"{EscapeJsonString(stringList[j])}\"");
-                    }
-                    sb.Append("]");
-                }
-                else if (kvp.Value is List<Dictionary<string, object>> dictList)
-                {
-                    sb.Append("[");
-                    for (int j = 0; j < dictList.Count; j++)
-                    {
-                        if (j > 0) sb.Append(",");
-                        sb.Append(SerializeDictToJson(dictList[j]));
-                    }
-                    sb.Append("]");
-                }
-                else if (kvp.Value is Dictionary<string, object> nestedDict)
-                {
-                    sb.Append(SerializeDictToJson(nestedDict));
-                }
-                else
-                    sb.Append($"\"{EscapeJsonString(kvp.Value?.ToString() ?? "")}\"");
+                if (i > 0) sb.Append(',');
+                sb.Append('"').Append(kvp.Key).Append("\":");
+                AppendJsonValue(sb, kvp.Value);
                 i++;
             }
-            sb.Append("}");
+            sb.Append('}');
             return sb.ToString();
         }
 

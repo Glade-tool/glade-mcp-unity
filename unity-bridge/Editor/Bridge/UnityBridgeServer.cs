@@ -459,6 +459,7 @@ namespace GladeAgenticAI.Bridge
                 string result = ToolExecutor.ExecuteTool(request.toolName, request.arguments);
                 _toolCallCount++;
                 _lastToolCalled = request.toolName;
+                SessionTracker.Record(request.toolName, request.arguments, result);
 
                 // Check if tool requires compilation (based on tool name)
                 bool requiresCompilation = ToolRequiresCompilation(request.toolName);
@@ -574,6 +575,7 @@ namespace GladeAgenticAI.Bridge
                         string result = ToolExecutor.ExecuteTool(call.toolName, args);
                         _toolCallCount++;
                         _lastToolCalled = call.toolName;
+                        SessionTracker.Record(call.toolName, args, result);
 
                         toolResult.success = true;
                         toolResult.result = result;

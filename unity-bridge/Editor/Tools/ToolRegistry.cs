@@ -107,6 +107,7 @@ namespace GladeAgenticAI.Services
             // Utility
             Register(new ThinkTool());
             Register(new GetInputSystemInfoTool());
+            Register(new GetSessionSummaryTool());
 
             // Scripts
             Register(new GetScriptContentTool());
