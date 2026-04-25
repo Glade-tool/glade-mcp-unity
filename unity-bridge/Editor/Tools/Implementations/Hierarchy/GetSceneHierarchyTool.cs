@@ -26,7 +26,7 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Hierarchy
 
             // BFS ensures balanced coverage across roots instead of burning the budget
             // on the first deep subtree (mirrors UnityContextGatherer.GetSceneHierarchy).
-            var queue = new Queue<(GameObject go, int depth, string parentPath)>();
+            var queue = new Queue<(UnityEngine.GameObject go, int depth, string parentPath)>();
             foreach (var root in roots)
             {
                 if (!includeInactive && !root.activeInHierarchy) continue;
