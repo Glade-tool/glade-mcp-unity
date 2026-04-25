@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using GladeAgenticAI.Services;
 using UnityEditor;
 using UnityEngine;
 
@@ -15,8 +17,10 @@ namespace GladeAgenticAI.Bridge
     {
         private GUIStyle _headerStyle;
         private GUIStyle _helpBoxStyle;
+        private GUIStyle _timelineStyle;
         private bool _stylesInitialized;
         private bool _showSetup;
+        private bool _showActivityTimeline = true;
         private Vector2 _scrollPos;
 
         [MenuItem("Window/GladeKit MCP")]
@@ -50,6 +54,11 @@ namespace GladeAgenticAI.Bridge
         {
             if (_stylesInitialized) return;
             _headerStyle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 14 };
+            _timelineStyle = new GUIStyle(EditorStyles.miniLabel)
+            {
+                wordWrap = true,
+                richText = true,
+            };
             _stylesInitialized = true;
         }
 
@@ -68,6 +77,8 @@ namespace GladeAgenticAI.Bridge
             DrawClientStatus();
             EditorGUILayout.Space(8);
             DrawToolStats();
+            EditorGUILayout.Space(8);
+            DrawSessionActivity();
             EditorGUILayout.Space(12);
             DrawSetupHelp();
 
@@ -139,6 +150,93 @@ namespace GladeAgenticAI.Bridge
 
             EditorGUILayout.LabelField($"Tool calls:  {callCount}");
             EditorGUILayout.LabelField($"Last tool:   {lastTool}");
+        }
+
+        private void DrawSessionActivity()
+        {
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField("Session Activity", EditorStyles.boldLabel);
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("Clear", EditorStyles.miniButton, GUILayout.Width(50)))
+                {
+                    if (EditorUtility.DisplayDialog("Clear Session Summary",
+                        "Reset the session mutation log?", "Clear", "Cancel"))
+                    {
+                        SessionTracker.Reset();
+                    }
+                }
+            }
+
+            var summary = SessionTracker.BuildSummary(maxTimelineReturn: 25);
+
+            int mutations = summary.TryGetValue("mutations", out var m) && m is int mi ? mi : 0;
+            int successCount = summary.TryGetValue("successCount", out var s) && s is int si ? si : 0;
+            int errorCount = summary.TryGetValue("errorCount", out var e) && e is int ei ? ei : 0;
+            int elapsedSeconds = summary.TryGetValue("elapsedSeconds", out var el) && el is int eli ? eli : 0;
+
+            EditorGUILayout.LabelField(
+                $"Mutations: {mutations}    OK: {successCount}    Errors: {errorCount}    Uptime: {FormatElapsed(elapsedSeconds)}");
+
+            if (mutations == 0)
+            {
+                EditorGUILayout.HelpBox("No mutations yet this session.", MessageType.None);
+                return;
+            }
+
+            // Per-category breakdown
+            if (summary.TryGetValue("byCategory", out var bcObj) &&
+                bcObj is Dictionary<string, object> byCategory && byCategory.Count > 0)
+            {
+                EditorGUILayout.Space(2);
+                foreach (var kvp in byCategory)
+                {
+                    if (!(kvp.Value is Dictionary<string, object> bucket)) continue;
+                    int created  = bucket.TryGetValue("created", out var c) && c is int ci ? ci : 0;
+                    int modified = bucket.TryGetValue("modified", out var md) && md is int mdi ? mdi : 0;
+                    int destroyed = bucket.TryGetValue("destroyed", out var d) && d is int di ? di : 0;
+                    var parts = new List<string>(3);
+                    if (created > 0) parts.Add($"+{created}");
+                    if (modified > 0) parts.Add($"~{modified}");
+                    if (destroyed > 0) parts.Add($"-{destroyed}");
+                    string countLabel = parts.Count > 0 ? string.Join(" ", parts) : "—";
+                    EditorGUILayout.LabelField($"  {kvp.Key,-14} {countLabel}");
+                }
+            }
+
+            EditorGUILayout.Space(4);
+            _showActivityTimeline = EditorGUILayout.Foldout(
+                _showActivityTimeline,
+                $"Recent ({Mathf.Min(mutations, 25)})",
+                true);
+
+            if (!_showActivityTimeline) return;
+
+            if (!summary.TryGetValue("timeline", out var tlObj) ||
+                !(tlObj is List<Dictionary<string, object>> timeline))
+            {
+                return;
+            }
+
+            foreach (var entry in timeline)
+            {
+                string tool   = entry.TryGetValue("tool", out var t) ? t as string ?? "?" : "?";
+                string action = entry.TryGetValue("action", out var a) ? a as string ?? "" : "";
+                string target = entry.TryGetValue("target", out var tg) ? tg as string ?? "" : "";
+                bool success  = entry.TryGetValue("success", out var su) && su is bool sub && sub;
+
+                string glyph = action == "create" ? "+" : action == "destroy" ? "-" : "~";
+                string status = success ? "" : " <color=#cc5555>(error)</color>";
+                string targetSuffix = string.IsNullOrEmpty(target) ? "" : $"  →  {target}";
+                EditorGUILayout.LabelField($"{glyph} {tool}{targetSuffix}{status}", _timelineStyle);
+            }
+        }
+
+        private static string FormatElapsed(int seconds)
+        {
+            if (seconds < 60) return $"{seconds}s";
+            if (seconds < 3600) return $"{seconds / 60}m {seconds % 60}s";
+            return $"{seconds / 3600}h {(seconds % 3600) / 60}m";
         }
 
         private void DrawSetupHelp()

@@ -146,7 +146,7 @@ TOOLS: List[Dict] = [
         "type": "function",
         "function": {
             "name": "set_game_object_parent",
-            "description": "Change the parent of a GameObject",
+            "description": "Reparent a GameObject — make it a child of another GameObject (or move it to the scene root). Use this for any 'attach X to Y', 'parent X under Y', 'put X inside Y', or hierarchy-restructuring request. NOT related to IK/animation rigging.",
             "parameters": {
                 "type": "object",
                 "properties": {

@@ -72,7 +72,7 @@ TOOLS: List[Dict] = [
         "type": "function",
         "function": {
             "name": "assign_ik_target",
-            "description": "Assign an existing GameObject as an IK target for runtime body part control (connecting weapons, items, or interaction points). For locomotion and animation authoring, use standard animation tools.",
+            "description": "Wire a GameObject into an IKController as the runtime target for a specific humanoid IK goal (LeftHand/RightHand/LeftFoot/etc.). ONLY use when the parent GameObject already has an IKController script and you are configuring inverse kinematics for a humanoid Animator. NOT a parenting tool — for 'attach X to Y' / 'parent X under Y' use set_game_object_parent instead.",
             "parameters": {
                 "type": "object",
                 "properties": {

@@ -33,10 +33,22 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Animation
             if (targetObj == null)
                 return ToolUtils.CreateErrorResponse($"Target GameObject '{targetPath}' not found");
             
-            // Find IKController component
+            // Find IKController component. If the GameObject has no Animator at all,
+            // this is almost certainly a misroute (model meant set_game_object_parent
+            // for "attach X to Y" / "parent X under Y") — surface that explicitly so
+            // the retry doesn't go down the rabbit hole of creating an IKController.
             var ikController = obj.GetComponent("IKController");
             if (ikController == null)
             {
+                bool hasAnimator = obj.GetComponent<UnityEngine.Animator>() != null;
+                if (!hasAnimator)
+                {
+                    return ToolUtils.CreateErrorResponse(
+                        $"'{gameObjectPath}' has no Animator, so it cannot host an IKController. " +
+                        $"If you intended to make '{targetPath}' a child of '{gameObjectPath}' " +
+                        $"(reparenting / 'attach to' / 'put on top of'), call set_game_object_parent " +
+                        $"with gameObjectPath='{targetPath}' and parentPath='{gameObjectPath}' instead.");
+                }
                 return ToolUtils.CreateErrorResponse($"IKController component not found on '{gameObjectPath}'. Create it first using create_ik_controller_script and add_component.");
             }
             
