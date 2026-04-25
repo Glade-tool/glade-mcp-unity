@@ -130,7 +130,7 @@ TOOLS: List[Dict] = [
         "type": "function",
         "function": {
             "name": "get_scene_hierarchy",
-            "description": "List GameObjects in the active scene. Returns a flat list of hierarchy paths.",
+            "description": "List GameObject paths in the active scene. Results are capped and BFS-balanced — use find_game_objects (nameContains/hasComponent/tag) or list_children to drill into a specific subtree instead of raising maxResults. For per-object components/state, follow up with get_gameobject_info or get_gameobject_components.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -145,6 +145,10 @@ TOOLS: List[Dict] = [
                     "rootOnly": {
                         "type": "boolean",
                         "description": "If true, only list root objects. Default: false",
+                    },
+                    "maxResults": {
+                        "type": "integer",
+                        "description": "Max objects to return. Default: 200. Use -1 for unlimited. Response includes truncated flag and totalCount when capped.",
                     },
                 },
                 "required": [],
