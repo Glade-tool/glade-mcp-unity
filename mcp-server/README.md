@@ -343,6 +343,16 @@ Endpoints:
 
 - The file must be named exactly `GLADE.md` (case-sensitive on Mac/Linux) and placed in the Unity project root (same directory as `Assets/`, `Packages/`, `ProjectSettings/`)
 
+**Stderr warning: `Unity bridge X.Y.Z is older than recommended`**
+
+- Unity caches UPM git packages and never refetches, so an `?path=unity-bridge` install drifts behind `main` over time. Update via Unity → **Window > Package Manager > GladeKit MCP Bridge > Update**, or pin the manifest entry to a specific tag so future updates are explicit:
+
+  ```json
+  "com.gladekit.mcp-bridge": "https://github.com/Glade-tool/glade-mcp-unity.git?path=unity-bridge#v0.4.1"
+  ```
+
+- The same warning also appears as a one-shot prefix on the next tool response so you see it in chat. To silence both: add `"GLADEKIT_MCP_SUPPRESS_BRIDGE_WARNING": "1"` to the `env` of your MCP client config.
+
 **Unity AI Gateway - server shows FailedToStart**
 
 - Click **Inspect** in the Servers section for the error message
