@@ -16,7 +16,7 @@ from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from . import DEFAULT_HTTP_HOST, DEFAULT_HTTP_PATH, DEFAULT_HTTP_PORT, bridge, cloud, search, skill
+from . import DEFAULT_HTTP_HOST, DEFAULT_HTTP_PATH, DEFAULT_HTTP_PORT, bridge, bridge_version, cloud, search, skill
 from .prompts import build_prompt_from_bridge
 from .tools.registry import dispatch_tool_call, get_mcp_tools, sanitize_args
 from .tools.task_filter import get_relevant_tool_summary
@@ -193,6 +193,21 @@ async def list_tools() -> list[types.Tool]:
 
 @server.call_tool()
 async def call_tool(
+    name: str,
+    arguments: dict,
+) -> list[types.TextContent]:
+    """Public entry — dispatches to _handle_tool_call and prepends a one-shot
+    bridge-staleness warning to the first text content if the bridge is older
+    than MIN_BRIDGE_VERSION. Computed before dispatch so even error responses
+    carry the warning on the first call after startup."""
+    bridge_warning = await bridge_version.get_warning_prefix()
+    result = await _handle_tool_call(name, arguments)
+    if bridge_warning and result and getattr(result[0], "text", None) is not None:
+        result[0] = types.TextContent(type="text", text=bridge_warning + result[0].text)
+    return result
+
+
+async def _handle_tool_call(
     name: str,
     arguments: dict,
 ) -> list[types.TextContent]:
@@ -573,6 +588,9 @@ async def run_server():
     import sys
 
     print(_banner("stdio"), file=sys.stderr)
+    # Warn early if the bridge is reachable but stale. Silent if Unity isn't
+    # running yet — we'll re-check on first tool call.
+    await bridge_version.check_on_startup()
     try:
         async with stdio_server() as (read_stream, write_stream):
             await server.run(

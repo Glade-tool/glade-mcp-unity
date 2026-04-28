@@ -357,16 +357,102 @@ namespace GladeAgenticAI.Bridge
         /// </summary>
         private static void HandleHealth(HttpListenerContext context)
         {
+            var (bridgeVersion, bridgeKind) = ReadBridgePackageInfo();
             var response = new HealthResponse
             {
                 status = "ok",
                 unityVersion = Application.unityVersion,
                 projectName = Application.productName,
                 projectPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..")),
-                isCompiling = EditorApplication.isCompiling
+                isCompiling = EditorApplication.isCompiling,
+                bridgeVersion = bridgeVersion,
+                bridgeKind = bridgeKind
             };
 
             SendJson(context.Response, response);
+        }
+
+        // Cached so /api/health doesn't hit disk on every poll.
+        private static string _cachedBridgeVersion;
+        private static string _cachedBridgeKind;
+        private static bool _bridgeInfoLoaded;
+
+        /// <summary>
+        /// Read bridgeVersion and bridgeKind from the installed package's package.json.
+        /// Searches both Packages/com.gladekit.{mcp-bridge|agenticai}/package.json
+        /// (embedded) and Library/PackageCache/com.gladekit.{...}@*/package.json (UPM
+        /// git cache). Returns (null, null) if neither package can be located —
+        /// typically only happens in dev when the bridge is loose under Assets/.
+        /// </summary>
+        private static (string version, string kind) ReadBridgePackageInfo()
+        {
+            if (_bridgeInfoLoaded) return (_cachedBridgeVersion, _cachedBridgeKind);
+
+            try
+            {
+                string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string[] candidatePackages = { "com.gladekit.mcp-bridge", "com.gladekit.agenticai" };
+
+                foreach (var pkgName in candidatePackages)
+                {
+                    string embedded = Path.Combine(projectRoot, "Packages", pkgName, "package.json");
+                    if (File.Exists(embedded))
+                    {
+                        string version = ExtractVersionField(File.ReadAllText(embedded));
+                        if (!string.IsNullOrEmpty(version))
+                        {
+                            _cachedBridgeVersion = version;
+                            _cachedBridgeKind = pkgName == "com.gladekit.mcp-bridge" ? "mcp" : "agenticai";
+                            _bridgeInfoLoaded = true;
+                            return (_cachedBridgeVersion, _cachedBridgeKind);
+                        }
+                    }
+
+                    string cacheDir = Path.Combine(projectRoot, "Library", "PackageCache");
+                    if (Directory.Exists(cacheDir))
+                    {
+                        // UPM git packages live at Library/PackageCache/<name>@<hash>/
+                        var matches = Directory.GetDirectories(cacheDir, pkgName + "@*");
+                        foreach (var dir in matches)
+                        {
+                            string pj = Path.Combine(dir, "package.json");
+                            if (!File.Exists(pj)) continue;
+                            string version = ExtractVersionField(File.ReadAllText(pj));
+                            if (!string.IsNullOrEmpty(version))
+                            {
+                                _cachedBridgeVersion = version;
+                                _cachedBridgeKind = pkgName == "com.gladekit.mcp-bridge" ? "mcp" : "agenticai";
+                                _bridgeInfoLoaded = true;
+                                return (_cachedBridgeVersion, _cachedBridgeKind);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[UnityBridge] Failed to read bridge package info: {e.Message}");
+            }
+
+            _bridgeInfoLoaded = true;
+            return (null, null);
+        }
+
+        // Tiny single-field probe — avoids pulling in a JSON parser just for one
+        // field. package.json always has "version" near the top.
+        private static string ExtractVersionField(string json)
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+            const string needle = "\"version\"";
+            int i = json.IndexOf(needle, StringComparison.Ordinal);
+            if (i < 0) return null;
+            int colon = json.IndexOf(':', i + needle.Length);
+            if (colon < 0) return null;
+            int q1 = json.IndexOf('"', colon + 1);
+            if (q1 < 0) return null;
+            int q2 = json.IndexOf('"', q1 + 1);
+            if (q2 < 0) return null;
+            return json.Substring(q1 + 1, q2 - q1 - 1);
         }
 
         /// <summary>
