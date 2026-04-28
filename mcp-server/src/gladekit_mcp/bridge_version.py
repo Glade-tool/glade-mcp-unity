@@ -128,7 +128,7 @@ async def get_warning_prefix() -> str:
     label = installed or "<0.4.0"
     return (
         f"⚠️ GladeKit MCP bridge {label} is older than recommended v{MIN_BRIDGE_VERSION}. "
-        f"Some features (e.g. \"What changed\" panel, session summary) may be unavailable. "
+        f'Some features (e.g. "What changed" panel, session summary) may be unavailable. '
         f"{UPGRADE_INSTRUCTIONS}\n\n"
         f"---\n\n"
     )
