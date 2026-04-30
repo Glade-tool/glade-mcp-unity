@@ -38,9 +38,8 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Animation
                 return ToolUtils.CreateErrorResponse($"AnimationClip not found at '{clipPath}'");
 
             // ParseJsonToDict leaves nested JSON arrays as raw strings; re-hydrate
-            // via TryParseJsonArrayToList so this works whether args arrive
-            // already-typed (e.g. WebSocket dispatch) or string-encoded
-            // (e.g. batch_execute or external MCP clients).
+            // via TryParseJsonArrayToList so the array works whether it arrives
+            // already-typed or string-encoded (e.g. via batch_execute).
             var curvesObj = args["curves"];
             if (curvesObj is string curvesJson && ToolUtils.TryParseJsonArrayToList(curvesJson, out var parsedCurves))
                 curvesObj = parsedCurves;
@@ -64,9 +63,7 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Animation
                 string path = curve.ContainsKey("path") ? curve["path"].ToString() : "";
                 string propertyName = curve.ContainsKey("propertyName") ? curve["propertyName"].ToString() : "";
 
-                // Accept both `type` (canonical) and `componentType` (legacy schema name).
-                // Pre-2026-04-30 the Python schema advertised `componentType` while C# read `type`,
-                // so curves authored from the schema were silently dropped.
+                // Accept both `type` (canonical) and `componentType` (legacy alias).
                 string typeStr = "";
                 if (curve.ContainsKey("type")) typeStr = curve["type"].ToString();
                 else if (curve.ContainsKey("componentType")) typeStr = curve["componentType"].ToString();
@@ -92,7 +89,7 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Animation
                     continue;
                 }
 
-                // Accept both `keyframes` (canonical) and `keys` (legacy schema name).
+                // Accept both `keyframes` (canonical) and `keys` (legacy alias).
                 object keyframesObj = null;
                 if (curve.ContainsKey("keyframes")) keyframesObj = curve["keyframes"];
                 else if (curve.ContainsKey("keys")) keyframesObj = curve["keys"];
@@ -158,8 +155,8 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Animation
                 }
             }
 
-            // Surface a hard error when nothing landed and skips exist — silent
-            // success-with-zero is the failure mode this audit is closing.
+            // Return an error when nothing applied but skips exist, so callers
+            // don't mistake a zero-result for a successful no-op.
             if (curvesAdded == 0 && skipped.Count > 0)
             {
                 return ToolUtils.CreateErrorResponse(

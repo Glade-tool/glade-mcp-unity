@@ -26,11 +26,7 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Animation
 
             var curves = new List<Dictionary<string, object>>();
 
-            // Editor curves (float/int/bool). Pre-2026-04-30 this used a hand-rolled
-            // SerializedObject walk against `m_EditorCurves` reading non-existent
-            // `propertyName`/`type` fields — the actual YAML keys are `attribute`
-            // and `classID`. Result was every curve silently dropped from the read.
-            // AnimationUtility.GetCurveBindings has existed since Unity 5.x.
+            // Editor curves (float/int/bool) via the canonical AnimationUtility API.
             EditorCurveBinding[] editorBindings = AnimationUtility.GetCurveBindings(clip);
             foreach (var binding in editorBindings)
             {

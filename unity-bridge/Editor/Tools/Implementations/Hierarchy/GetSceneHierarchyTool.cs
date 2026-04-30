@@ -10,8 +10,7 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Hierarchy
         public string Name => "get_scene_hierarchy";
 
         // Default cap matches the AI schema. BFS + this cap keep large scenes
-        // (Microverse terrain, prefab spam) from producing multi-MB HTTP payloads.
-        // The backend formatter caps the model-facing slice at _MAX_HIERARCHY_PATHS.
+        // (heavy terrain, prefab-dense scenes) from producing multi-MB payloads.
         private const int DefaultMaxResults = 200;
 
         public string Execute(Dictionary<string, object> args)

@@ -11,8 +11,8 @@ namespace GladeAgenticAI.Services
     /// Per-domain mutation log for the current Unity Editor session.
     ///
     /// Records every successful tool dispatch so the AI (or the user, via the
-    /// status window / Electron surface) can ask "what just changed?" and get
-    /// a grouped, human-readable answer. Complements ErrorTracker which only
+    /// status window or any client UI) can ask "what just changed?" and get a
+    /// grouped, human-readable answer. Complements ErrorTracker which only
     /// captures failures.
     ///
     /// Scope: in-memory only. Reset on Editor domain reload — intentional:

@@ -3,8 +3,9 @@ using System.Collections.Generic;
 namespace GladeAgenticAI.Services
 {
     /// <summary>
-    /// Enforces the "Reference demo assets" setting: when disabled, no asset under the plugin's DemoAssets folder may be used or listed.
-    /// Simplified version for Electron-based projects - always allows demo assets (no UI setting available).
+    /// Enforces the "Reference demo assets" setting: when disabled, no asset under the plugin's
+    /// DemoAssets folder may be used or listed. The setting lives in EditorPrefs under
+    /// `GladeAI.ReferenceDemoAssets` and defaults to true when unset.
     /// </summary>
     public static class DemoAssetsGuard
     {
@@ -26,7 +27,7 @@ namespace GladeAgenticAI.Services
 
         /// <summary>
         /// Returns true if the path is allowed to be used (load, save, open, delete, etc.).
-        /// Reads setting from EditorPrefs (set by Electron app via Unity Bridge).
+        /// Reads `GladeAI.ReferenceDemoAssets` from EditorPrefs.
         /// </summary>
         public static bool AllowUseOfDemoAssetPath(string path)
         {
@@ -38,7 +39,7 @@ namespace GladeAgenticAI.Services
         /// <summary>
         /// When "Reference demo assets" is false, removes any path under DemoAssets from the list.
         /// Otherwise returns the list unchanged.
-        /// Reads setting from EditorPrefs (set by Electron app via Unity Bridge).
+        /// Reads `GladeAI.ReferenceDemoAssets` from EditorPrefs.
         /// </summary>
         public static List<string> FilterPathsExcludingDemoAssets(List<string> paths)
         {

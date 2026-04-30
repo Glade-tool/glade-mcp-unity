@@ -8,9 +8,8 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Utility
     /// Returns a grouped summary of every mutation recorded by SessionTracker
     /// since the Unity Editor session started (or since the last Reset).
     ///
-    /// Read-only. Used by the AI (via "what did you just do?" prompts) and by
-    /// future UI surfaces (status window / Electron sidebar) to show users
-    /// what actually changed, which serves the "Transparent" north star.
+    /// Read-only. Lets the AI answer "what did you just do?" and lets UI
+    /// surfaces show users exactly what changed during a session.
     /// </summary>
     public class GetSessionSummaryTool : ITool
     {

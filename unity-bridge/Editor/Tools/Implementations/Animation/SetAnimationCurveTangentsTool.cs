@@ -41,9 +41,9 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Animation
             if (clip == null)
                 return ToolUtils.CreateErrorResponse($"AnimationClip not found at '{clipPath}'");
             
-            // Resolve binding type (defaults to Transform for backwards compat).
-            // Pre-2026-04-30 this was hardcoded — silent fail when tangent-tuning
-            // SpriteRenderer / MeshRenderer / custom-script curves.
+            // Resolve binding type (defaults to Transform). Optional `type` arg
+            // lets callers tangent-tune SpriteRenderer / MeshRenderer / custom
+            // MonoBehaviour curves, not just Transform.
             string typeStr = args.ContainsKey("type") ? args["type"].ToString() : "Transform";
             System.Type bindingType = ToolUtils.FindAnimationBindingType(typeStr) ?? typeof(UnityEngine.Transform);
 

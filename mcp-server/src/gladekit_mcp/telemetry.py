@@ -142,7 +142,7 @@ class BatchDisciplineCounters:
     A "burst" is a sequence of read-only single calls separated by less than
     ``gap_window_s`` from each other, with no mutation or batch_execute in
     between. Every call after the first in a burst is counted as
-    ``should_have_batched`` — that's the metric the TODO actually cares about.
+    ``should_have_batched`` — that's the metric callers care about.
     """
 
     # Read-only calls that arrived inside a batch_execute payload.

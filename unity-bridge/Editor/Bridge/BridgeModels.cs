@@ -68,9 +68,9 @@ namespace GladeAgenticAI.Bridge
         public string projectPath; // Absolute path to the Unity project root (parent of Assets/)
         public bool isCompiling;
         public string error;
-        // Bridge self-identification (added v0.4.0). Lets clients (Electron app,
-        // MCP server) detect which bridge variant is installed and warn on stale
-        // versions without scraping package.json from disk.
+        // Bridge self-identification (added v0.4.0). Lets clients detect which
+        // bridge variant is installed and warn on stale versions without
+        // scraping package.json from disk.
         public string bridgeVersion; // e.g. "0.4.0" — null if package.json unreadable
         public string bridgeKind;    // "mcp" | "agenticai" | null
     }

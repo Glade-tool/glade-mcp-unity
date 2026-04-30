@@ -249,7 +249,7 @@ namespace GladeAgenticAI.Bridge
             var request = context.Request;
             var response = context.Response;
 
-            // Add CORS headers for Electron app
+            // Add CORS headers so browser-based and desktop clients can connect
             response.AddHeader("Access-Control-Allow-Origin", "*");
             response.AddHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
             response.AddHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -262,8 +262,8 @@ namespace GladeAgenticAI.Bridge
                 return;
             }
 
-            // Update last request time for all requests (including health checks from Electron app)
-            // This tracks when the Electron app last communicated with Unity
+            // Update last request time so the status window can show when a
+            // client last communicated with Unity.
             _lastRequestTime = DateTime.Now;
             
             string path = request.Url.AbsolutePath;

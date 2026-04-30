@@ -28,7 +28,7 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Utility
 
             string recommended = activeInputHandling;
             string reason = activeInputHandling == "BOTH"
-                ? "BOTH – proxy will decide from scripts"
+                ? "BOTH – caller should decide from project scripts"
                 : "Active input handling is " + activeInputHandling;
 
             var extras = new Dictionary<string, object>
