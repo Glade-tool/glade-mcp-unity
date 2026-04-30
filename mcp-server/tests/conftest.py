@@ -57,16 +57,20 @@ def mock_bridge_context():
 
 @pytest.fixture(autouse=True)
 def reset_session_memory():
-    """Clear session memory and skill state between tests."""
-    from gladekit_mcp import server, skill
+    """Clear session memory, skill, and telemetry state between tests."""
+    from gladekit_mcp import server, skill, telemetry
 
     server._session_memory.clear()
     skill._session_messages.clear()
     skill._last_persisted_count.clear()
+    telemetry.reset()
+    telemetry.reset_clock()
     yield
     server._session_memory.clear()
     skill._session_messages.clear()
     skill._last_persisted_count.clear()
+    telemetry.reset()
+    telemetry.reset_clock()
 
 
 @pytest.fixture(autouse=True)

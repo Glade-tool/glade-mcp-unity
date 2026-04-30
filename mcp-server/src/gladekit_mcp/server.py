@@ -16,7 +16,17 @@ from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from . import DEFAULT_HTTP_HOST, DEFAULT_HTTP_PATH, DEFAULT_HTTP_PORT, bridge, bridge_version, cloud, search, skill
+from . import (
+    DEFAULT_HTTP_HOST,
+    DEFAULT_HTTP_PATH,
+    DEFAULT_HTTP_PORT,
+    bridge,
+    bridge_version,
+    cloud,
+    search,
+    skill,
+    telemetry,
+)
 from .prompts import build_prompt_from_bridge
 from .tools.registry import dispatch_tool_call, get_mcp_tools, sanitize_args
 from .tools.task_filter import get_relevant_tool_summary
@@ -293,6 +303,10 @@ async def _handle_tool_call(
             for call in calls
         ]
 
+        # Record discipline BEFORE dispatch — what we measure is the model's
+        # decision to batch, not the bridge's success.
+        telemetry.record_batch_execute(_current_session_id(), sanitized_calls)
+
         try:
             results = await bridge.execute_batch(sanitized_calls)
         except Exception as exc:
@@ -340,6 +354,11 @@ async def _handle_tool_call(
             return [types.TextContent(type="text", text=f"Could not reach Unity bridge: {e}")]
 
     # ── Unity bridge tools ────────────────────────────────────────────────────
+    # Record discipline for direct (non-batched) dispatch. Meta-tools like
+    # get_relevant_tools and remember_for_session are excluded above so they
+    # don't pollute the metric — they're prompt-continuation sugar, not
+    # batchable Unity calls.
+    telemetry.record_single_call(_current_session_id(), name)
     result = await dispatch_tool_call(name, arguments)
     return [types.TextContent(type="text", text=result)]
 
@@ -396,6 +415,17 @@ async def list_resources() -> list[types.Resource]:
             uri="unity://project/info",
             name="Project Configuration",
             description="Input system mode (NEW/OLD/BOTH), render pipeline, default shader, and other project settings",
+            mimeType="application/json",
+        ),
+        types.Resource(
+            uri="unity://telemetry/batch-discipline",
+            name="Batch Discipline Telemetry",
+            description=(
+                "Per-session counters and ratios for batch_execute usage vs. "
+                "sequential read-only single calls. Diagnostic only — useful "
+                "for verifying that the model is actually using batch_execute "
+                "for sibling read-only lookups."
+            ),
             mimeType="application/json",
         ),
     ]
@@ -483,6 +513,10 @@ async def read_resource(uri: str) -> str:
         if not memory:
             return "No session memories stored yet. Use remember_for_session to store facts."
         return "\n".join(f"{i + 1}. {fact}" for i, fact in enumerate(memory))
+
+    if uri_str == "unity://telemetry/batch-discipline":
+        summary = telemetry.get_summary(_current_session_id())
+        return json.dumps(summary, indent=2)
 
     if uri_str == "unity://project/info":
         try:
