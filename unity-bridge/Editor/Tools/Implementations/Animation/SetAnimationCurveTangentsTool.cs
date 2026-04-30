@@ -41,20 +41,43 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Animation
             if (clip == null)
                 return ToolUtils.CreateErrorResponse($"AnimationClip not found at '{clipPath}'");
             
-            // Create EditorCurveBinding
-            // For transform properties, type is typically Transform
-            // We'll try Transform first, but this might need to be more flexible
+            // Resolve binding type (defaults to Transform for backwards compat).
+            // Pre-2026-04-30 this was hardcoded — silent fail when tangent-tuning
+            // SpriteRenderer / MeshRenderer / custom-script curves.
+            string typeStr = args.ContainsKey("type") ? args["type"].ToString() : "Transform";
+            System.Type bindingType = ToolUtils.FindAnimationBindingType(typeStr) ?? typeof(UnityEngine.Transform);
+
             EditorCurveBinding binding = new EditorCurveBinding
             {
                 path = bindingPath ?? "",
                 propertyName = propertyName,
-                type = typeof(UnityEngine.Transform)
+                type = bindingType
             };
-            
-            // Get the curve
+
             AnimationCurve curve = AnimationUtility.GetEditorCurve(clip, binding);
             if (curve == null)
-                return ToolUtils.CreateErrorResponse($"Curve not found for property '{propertyName}' at path '{bindingPath}'");
+            {
+                // Enumerate up to 20 actual bindings on the clip so the model can retry
+                // against a real binding instead of guessing again.
+                var availableBindings = new List<string>();
+                EditorCurveBinding[] allBindings = AnimationUtility.GetCurveBindings(clip);
+                for (int i = 0; i < allBindings.Length && availableBindings.Count < 20; i++)
+                {
+                    var b = allBindings[i];
+                    availableBindings.Add($"{b.path}|{b.propertyName}|{b.type.Name}");
+                }
+                var extrasOnMiss = new Dictionary<string, object>
+                {
+                    { "requestedPath", bindingPath ?? "" },
+                    { "requestedPropertyName", propertyName },
+                    { "requestedType", bindingType.Name },
+                    { "availableBindings", availableBindings },
+                    { "hint", "availableBindings entries are 'path|propertyName|type'. Match propertyName exactly (e.g. 'm_LocalPosition.x', not 'position')." }
+                };
+                return ToolUtils.CreateErrorResponse(
+                    $"Curve not found for property '{propertyName}' at path '{bindingPath}' (type {bindingType.Name}). Clip has {allBindings.Length} editor curve binding(s) — see availableBindings.",
+                    extrasOnMiss);
+            }
             
             // Validate keyframeIndex
             if (keyframeIndex >= curve.keys.Length)

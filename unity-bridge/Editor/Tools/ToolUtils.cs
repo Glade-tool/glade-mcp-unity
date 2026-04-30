@@ -1148,6 +1148,62 @@ namespace GladeAgenticAI.Core.Tools
             return str.Replace("\\\"", "\"").Replace("\\n", "\n").Replace("\\r", "\r").Replace("\\t", "\t").Replace("\\\\", "\\");
         }
 
+        /// <summary>
+        /// Resolves a type string for an EditorCurveBinding. Accepts short names
+        /// ("Transform", "SpriteRenderer", "GameObject"), namespaced names
+        /// ("UnityEngine.Transform"), assembly-qualified names
+        /// ("UnityEngine.Transform, UnityEngine"), and user-defined MonoBehaviour
+        /// names. Returns null if the string can't be resolved.
+        ///
+        /// Differs from FindComponentType: animation curves can target GameObject
+        /// (m_IsActive activation curves) which is not a Component-derived type.
+        /// </summary>
+        public static System.Type FindAnimationBindingType(string typeName)
+        {
+            if (string.IsNullOrEmpty(typeName)) return null;
+            string trimmed = typeName.Trim();
+
+            // 1) Direct lookup (handles assembly-qualified names like "UnityEngine.Transform, UnityEngine")
+            System.Type type = System.Type.GetType(trimmed);
+            if (type != null && IsValidAnimationBindingType(type)) return type;
+
+            // 2) UnityEngine.* namespace fallback
+            type = System.Type.GetType($"UnityEngine.{trimmed}");
+            if (type != null && IsValidAnimationBindingType(type)) return type;
+
+            // 3) Reuse the Component resolution chain
+            System.Type componentType = FindComponentType(trimmed);
+            if (componentType != null) return componentType;
+
+            // 4) Final scan: GameObject and any UnityEngine.Object subtype matched by short name
+            foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                System.Type[] types;
+                try { types = assembly.GetTypes(); }
+                catch (System.Reflection.ReflectionTypeLoadException rtle) { types = rtle.Types; }
+                catch { continue; }
+                if (types == null) continue;
+
+                for (int i = 0; i < types.Length; i++)
+                {
+                    var t = types[i];
+                    if (t == null) continue;
+                    if (!IsValidAnimationBindingType(t)) continue;
+                    if (t.Name == trimmed) return t;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsValidAnimationBindingType(System.Type t)
+        {
+            if (t == null) return false;
+            if (typeof(Component).IsAssignableFrom(t)) return true;
+            if (t == typeof(GameObject)) return true;
+            return false;
+        }
+
         public static System.Type FindComponentType(string typeName)
         {
             if (string.IsNullOrEmpty(typeName)) return null;

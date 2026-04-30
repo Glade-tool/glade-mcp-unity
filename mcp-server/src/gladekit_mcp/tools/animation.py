@@ -884,20 +884,32 @@ TOOLS: List[Dict] = [
         "type": "function",
         "function": {
             "name": "set_animation_clip_curves",
-            "description": "Set animation curves on an AnimationClip.",
+            "description": "Set animation curves on an AnimationClip. Each curve targets a binding (path + propertyName + type) on the GameObject the clip is applied to.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "clipPath": {"type": "string"},
+                    "clipPath": {
+                        "type": "string",
+                        "description": "Path to the AnimationClip",
+                    },
                     "curves": {
                         "type": "array",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "path": {"type": "string"},
-                                "componentType": {"type": "string"},
-                                "propertyName": {"type": "string"},
-                                "keys": {
+                                "path": {
+                                    "type": "string",
+                                    "description": "GameObject path under the rig root (empty string = root)",
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "description": "Component type — short name or fully qualified. e.g. 'Transform', 'SpriteRenderer', 'GameObject', 'UnityEngine.Light', or a custom MonoBehaviour name.",
+                                },
+                                "propertyName": {
+                                    "type": "string",
+                                    "description": "Serialized property name. e.g. 'm_LocalPosition.x', 'm_LocalScale.y', 'm_Intensity', 'm_IsActive' (for GameObject activation curves).",
+                                },
+                                "keyframes": {
                                     "type": "array",
                                     "items": {
                                         "type": "object",
@@ -907,9 +919,12 @@ TOOLS: List[Dict] = [
                                             "inTangent": {"type": "number"},
                                             "outTangent": {"type": "number"},
                                         },
+                                        "required": ["time", "value"],
                                     },
+                                    "description": "Curve keyframes. Each needs at least time + value.",
                                 },
                             },
+                            "required": ["propertyName", "type", "keyframes"],
                         },
                     },
                 },
@@ -1167,6 +1182,10 @@ TOOLS: List[Dict] = [
                     "propertyName": {
                         "type": "string",
                         "description": "Property name (e.g., 'm_LocalPosition.x')",
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "Component type for the binding. Default: 'Transform'. Use 'SpriteRenderer', 'MeshRenderer', etc. for non-transform curves. On miss, response includes availableBindings to retry against.",
                     },
                     "keyframeIndex": {
                         "type": "integer",
