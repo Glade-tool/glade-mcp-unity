@@ -45,64 +45,99 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Input
                 else bool.TryParse(args["replaceBindings"].ToString(), out replaceBindings);
             }
 
-            if (args["maps"] is List<object> mapsList)
+            // Re-hydrate JSON-array strings at every nesting level so this works
+            // whether args arrive already-typed or string-encoded (e.g. via batch_execute).
+            var mapsObj = args["maps"];
+            if (mapsObj is string mapsJson && ToolUtils.TryParseJsonArrayToList(mapsJson, out var parsedMaps))
+                mapsObj = parsedMaps;
+            if (!(mapsObj is List<object> mapsList))
+                return ToolUtils.CreateErrorResponse("maps must be an array of action maps");
+
+            int mapsUpdated = 0;
+            int actionsUpdated = 0;
+            int bindingsAdded = 0;
+
+            foreach (var mapObj in mapsList)
             {
-                foreach (var mapObj in mapsList)
+                if (!(mapObj is Dictionary<string, object> mapDict)) continue;
+
+                string mapName = mapDict.ContainsKey("name") ? mapDict["name"].ToString() : "";
+                if (string.IsNullOrEmpty(mapName)) continue;
+
+                // Default throwIfNotFound:false returns null so the ?? fallback fires.
+                InputActionMap map = asset.FindActionMap(mapName) ?? asset.AddActionMap(mapName);
+                mapsUpdated++;
+
+                if (!mapDict.ContainsKey("actions")) continue;
+                var actionsObj = mapDict["actions"];
+                if (actionsObj is string actionsJson && ToolUtils.TryParseJsonArrayToList(actionsJson, out var parsedActions))
+                    actionsObj = parsedActions;
+                if (!(actionsObj is List<object> actionsList)) continue;
+
+                foreach (var actionObj in actionsList)
                 {
-                    if (mapObj is Dictionary<string, object> mapDict)
+                    if (!(actionObj is Dictionary<string, object> actionDict)) continue;
+
+                    string actionName = actionDict.ContainsKey("name") ? actionDict["name"].ToString() : "";
+                    string actionType = actionDict.ContainsKey("type") ? actionDict["type"].ToString() : "Value";
+                    if (string.IsNullOrEmpty(actionName)) continue;
+
+                    InputAction action = map.FindAction(actionName);
+                    if (action == null)
                     {
-                        string mapName = mapDict.ContainsKey("name") ? mapDict["name"].ToString() : "";
-                        if (string.IsNullOrEmpty(mapName)) continue;
+                        action = map.AddAction(actionName, ToolUtils.ParseInputActionType(actionType));
+                    }
 
-                        InputActionMap map = asset.FindActionMap(mapName, true) ?? asset.AddActionMap(mapName);
-                        if (mapDict.ContainsKey("actions") && mapDict["actions"] is List<object> actionsList)
-                        {
-                            foreach (var actionObj in actionsList)
-                            {
-                                if (actionObj is Dictionary<string, object> actionDict)
-                                {
-                                    string actionName = actionDict.ContainsKey("name") ? actionDict["name"].ToString() : "";
-                                    string actionType = actionDict.ContainsKey("type") ? actionDict["type"].ToString() : "Value";
-                                    if (string.IsNullOrEmpty(actionName)) continue;
+                    if (replaceBindings)
+                    {
+                        InputActionSetupExtensions.RemoveAction(asset, actionName);
+                        action = map.AddAction(actionName, ToolUtils.ParseInputActionType(actionType));
+                    }
+                    actionsUpdated++;
 
-                                    InputAction action = map.FindAction(actionName, true);
-                                    if (action == null)
-                                    {
-                                        action = map.AddAction(actionName, ToolUtils.ParseInputActionType(actionType));
-                                    }
+                    if (!actionDict.ContainsKey("bindings")) continue;
+                    var bindingsObj = actionDict["bindings"];
+                    if (bindingsObj is string bindingsJson && ToolUtils.TryParseJsonArrayToList(bindingsJson, out var parsedBindings))
+                        bindingsObj = parsedBindings;
+                    if (!(bindingsObj is List<object> bindingsList)) continue;
 
-                                    if (replaceBindings)
-                                    {
-                                        InputActionSetupExtensions.RemoveAction(asset, actionName);
-                                        action = map.AddAction(actionName, ToolUtils.ParseInputActionType(actionType));
-                                    }
-
-                                    if (actionDict.ContainsKey("bindings") && actionDict["bindings"] is List<object> bindingsList)
-                                    {
-                                        foreach (var bindObj in bindingsList)
-                                        {
-                                            if (bindObj is Dictionary<string, object> bindDict)
-                                            {
-                                                string path = bindDict.ContainsKey("path") ? bindDict["path"].ToString() : "";
-                                                if (string.IsNullOrEmpty(path)) continue;
-                                                var binding = action.AddBinding(path);
-                                                if (bindDict.ContainsKey("interactions")) binding.WithInteractions(bindDict["interactions"].ToString());
-                                                if (bindDict.ContainsKey("processors")) binding.WithProcessors(bindDict["processors"].ToString());
-                                                if (bindDict.ContainsKey("groups")) binding.WithGroups(bindDict["groups"].ToString());
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    foreach (var bindObj in bindingsList)
+                    {
+                        if (!(bindObj is Dictionary<string, object> bindDict)) continue;
+                        string path = bindDict.ContainsKey("path") ? bindDict["path"].ToString() : "";
+                        if (string.IsNullOrEmpty(path)) continue;
+                        var binding = action.AddBinding(path);
+                        if (bindDict.ContainsKey("interactions")) binding.WithInteractions(bindDict["interactions"].ToString());
+                        if (bindDict.ContainsKey("processors")) binding.WithProcessors(bindDict["processors"].ToString());
+                        if (bindDict.ContainsKey("groups")) binding.WithGroups(bindDict["groups"].ToString());
+                        bindingsAdded++;
                     }
                 }
             }
 
-            EditorUtility.SetDirty(asset);
-            AssetDatabase.SaveAssets();
-            
-            return ToolUtils.CreateSuccessResponse("Updated InputActionAsset bindings");
+            // .inputactions assets persist via JSON — SetDirty + SaveAssets is not
+            // enough; explicitly re-serialize the asset and reimport.
+            try
+            {
+                string json = asset.ToJson();
+                System.IO.File.WriteAllText(assetPath, json);
+                AssetDatabase.ImportAsset(assetPath);
+            }
+            catch (Exception e)
+            {
+                return ToolUtils.CreateErrorResponse(
+                    $"Applied {mapsUpdated} map(s)/{actionsUpdated} action(s) in memory but failed to persist to '{assetPath}': {e.Message}");
+            }
+
+            var extras = new Dictionary<string, object>
+            {
+                { "mapsUpdated", mapsUpdated },
+                { "actionsUpdated", actionsUpdated },
+                { "bindingsAdded", bindingsAdded }
+            };
+            return ToolUtils.CreateSuccessResponse(
+                $"Updated InputActionAsset: {mapsUpdated} map(s), {actionsUpdated} action(s), {bindingsAdded} binding(s)",
+                extras);
             #endif
         }
     }

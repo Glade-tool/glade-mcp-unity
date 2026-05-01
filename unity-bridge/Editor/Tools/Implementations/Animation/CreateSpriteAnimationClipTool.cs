@@ -62,8 +62,13 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Animation
                 return ToolUtils.CreateErrorResponse($"No sprites found in spritesheet at '{spritesheetPath}'. Make sure the spritesheet is sliced.");
             }
             
-            // Sort sprites by name (handle numeric suffixes)
-            if (args.ContainsKey("spriteOrder") && args["spriteOrder"] is List<object> spriteOrderList)
+            // Sort sprites by name (handle numeric suffixes). Re-hydrate JSON-array
+            // strings so spriteOrder works whether it arrives already-typed or
+            // string-encoded (e.g. via batch_execute).
+            object spriteOrderObj = args.ContainsKey("spriteOrder") ? args["spriteOrder"] : null;
+            if (spriteOrderObj is string soJson && ToolUtils.TryParseJsonArrayToList(soJson, out var parsedSpriteOrder))
+                spriteOrderObj = parsedSpriteOrder;
+            if (spriteOrderObj is List<object> spriteOrderList)
             {
                 // Custom order provided
                 var orderedSprites = new List<Sprite>();

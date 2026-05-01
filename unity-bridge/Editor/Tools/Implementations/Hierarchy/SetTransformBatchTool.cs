@@ -19,8 +19,13 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Hierarchy
 
             int updated = 0;
             var itemsObj = args[itemsKey];
-            var items = new List<Dictionary<string, object>>();
 
+            // Re-hydrate JSON-array strings so transforms works whether it arrives
+            // already-typed or string-encoded (e.g. via batch_execute).
+            if (itemsObj is string itemsJson && ToolUtils.TryParseJsonArrayToList(itemsJson, out var parsedItems))
+                itemsObj = parsedItems;
+
+            var items = new List<Dictionary<string, object>>();
             if (itemsObj is List<object> list)
             {
                 foreach (var item in list)
@@ -28,9 +33,9 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Hierarchy
                     if (item is Dictionary<string, object> dict) items.Add(dict);
                 }
             }
-            else if (itemsObj is string itemsStr && itemsStr.StartsWith("["))
+            else
             {
-                return ToolUtils.CreateErrorResponse("items must be an array of objects");
+                return ToolUtils.CreateErrorResponse($"{itemsKey} must be an array of objects");
             }
 
             var registry = new ToolRegistry();

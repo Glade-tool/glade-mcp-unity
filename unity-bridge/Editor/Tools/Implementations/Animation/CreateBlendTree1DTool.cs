@@ -72,34 +72,51 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Animation
             // Add motions
             var motionsObj = args["motions"];
             int motionCount = 0;
-            
+
+            // Re-hydrate JSON-array strings so motions works whether it arrives
+            // already-typed or string-encoded (e.g. via batch_execute).
+            if (motionsObj is string motionsJson && ToolUtils.TryParseJsonArrayToList(motionsJson, out var parsedMotions))
+                motionsObj = parsedMotions;
+
+            var skippedMotions = new List<Dictionary<string, object>>();
+            int requestedMotions = 0;
             if (motionsObj is List<object> motionList)
             {
                 foreach (var motionObj in motionList)
                 {
-                    if (motionObj is Dictionary<string, object> motion)
+                    if (!(motionObj is Dictionary<string, object> motion))
                     {
-                        string clipPath = motion.ContainsKey("clipPath") ? motion["clipPath"].ToString() : "";
-                        float threshold = 0f;
-                        if (motion.ContainsKey("threshold"))
-                        {
-                            if (motion["threshold"] is float f) threshold = f;
-                            else float.TryParse(motion["threshold"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out threshold);
-                        }
-                        
-                        if (!string.IsNullOrEmpty(clipPath))
-                        {
-                            if (!clipPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
-                                clipPath = "Assets/" + clipPath;
-                                
-                            AnimationClip clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath);
-                            if (clip != null)
-                            {
-                                blendTree.AddChild(clip, threshold);
-                                motionCount++;
-                            }
-                        }
+                        skippedMotions.Add(new Dictionary<string, object> { { "reason", "motion entry is not an object" } });
+                        continue;
                     }
+                    requestedMotions++;
+
+                    string clipPath = motion.ContainsKey("clipPath") ? motion["clipPath"].ToString() : "";
+                    float threshold = 0f;
+                    if (motion.ContainsKey("threshold"))
+                    {
+                        if (motion["threshold"] is float f) threshold = f;
+                        else float.TryParse(motion["threshold"].ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out threshold);
+                    }
+
+                    if (string.IsNullOrEmpty(clipPath))
+                    {
+                        skippedMotions.Add(new Dictionary<string, object> { { "clipPath", clipPath }, { "reason", "clipPath is required" } });
+                        continue;
+                    }
+
+                    if (!clipPath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+                        clipPath = "Assets/" + clipPath;
+
+                    AnimationClip clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(clipPath);
+                    if (clip == null)
+                    {
+                        skippedMotions.Add(new Dictionary<string, object> { { "clipPath", clipPath }, { "reason", "AnimationClip not found at clipPath" } });
+                        continue;
+                    }
+
+                    blendTree.AddChild(clip, threshold);
+                    motionCount++;
                 }
             }
             
@@ -118,13 +135,21 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Animation
             
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();
-            
+
             var extras = new Dictionary<string, object>
             {
                 { "stateName", stateName },
-                { "motionCount", motionCount }
+                { "motionCount", motionCount },
+                { "skippedCount", skippedMotions.Count }
             };
-            
+            if (skippedMotions.Count > 0)
+                extras["skippedMotions"] = skippedMotions;
+
+            if (requestedMotions > 0 && motionCount == 0)
+                return ToolUtils.CreateErrorResponse(
+                    $"Created 1D BlendTree '{stateName}' but 0 of {requestedMotions} motion(s) applied. See skippedMotions for per-entry reasons.",
+                    extras);
+
             return ToolUtils.CreateSuccessResponse($"Created 1D BlendTree '{stateName}' with {motionCount} motion(s)", extras);
         }
     }

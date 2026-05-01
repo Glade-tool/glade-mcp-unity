@@ -13,8 +13,16 @@ namespace GladeAgenticAI.Core.Tools.Implementations.InputLegacy
 
         public string Execute(Dictionary<string, object> args)
         {
-            if (!args.ContainsKey("axes") || !(args["axes"] is List<object> axesList))
+            if (!args.ContainsKey("axes"))
                 return ToolUtils.CreateErrorResponse("axes (array of axis objects with at least 'name') is required.");
+
+            // Re-hydrate JSON-array strings so axes works whether it arrives
+            // already-typed or string-encoded (e.g. via batch_execute).
+            var axesObj = args["axes"];
+            if (axesObj is string axesJson && ToolUtils.TryParseJsonArrayToList(axesJson, out var parsedAxes))
+                axesObj = parsedAxes;
+            if (!(axesObj is List<object> axesList))
+                return ToolUtils.CreateErrorResponse("axes must be an array of axis objects with at least 'name'.");
 
             UnityEngine.Object[] assets = AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/InputManager.asset");
             if (assets == null || assets.Length == 0)
