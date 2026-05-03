@@ -250,14 +250,6 @@ TOOLS: List[Dict] = [
     {
         "type": "function",
         "function": {
-            "name": "compile_scripts",
-            "description": "Request Unity script compilation.",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "refresh_asset_database",
             "description": "Refresh the AssetDatabase.",
             "parameters": {"type": "object", "properties": {}, "required": []},

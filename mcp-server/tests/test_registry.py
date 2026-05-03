@@ -43,16 +43,15 @@ class TestSchemaValidation:
     def test_no_duplicate_tool_names(self):
         """Tool names must be unique across all schemas.
 
-        Known issue: compile_scripts is defined in both core.py and scripting.py.
-        This test documents duplicates so they can be tracked and resolved.
+        MCP spec requires unique tool names. Windsurf hard-fails on duplicates
+        ("Duplicate tool name: mcp_*_X") and the chat becomes unusable until the
+        server is disabled. Claude Code is tolerant, which is why a regression
+        here is invisible to our daily usage — keep this test strict.
         """
         schemas = get_unity_tool_schemas()
         names = [s["function"]["name"] for s in schemas]
-        duplicates = [n for n in set(names) if names.count(n) > 1]
-        # Allow known duplicates (tracked for cleanup)
-        known_duplicates = {"compile_scripts"}
-        unexpected = set(duplicates) - known_duplicates
-        assert not unexpected, f"Unexpected duplicate tool names: {unexpected}"
+        duplicates = sorted(n for n in set(names) if names.count(n) > 1)
+        assert not duplicates, f"Duplicate tool names: {duplicates}"
 
     def test_tool_names_are_snake_case(self):
         """All tool names must be snake_case (lowercase with underscores)."""

@@ -165,8 +165,18 @@ def get_mcp_tools() -> list[types.Tool]:
     global _mcp_tools, _all_tool_names
     if _mcp_tools is None:
         openai_schemas = get_unity_tool_schemas()
-        all_tools = [_convert_openai_to_mcp(s) for s in openai_schemas]
-        _all_tool_names = {t.name for t in all_tools}
+        all_tools_with_dupes = [_convert_openai_to_mcp(s) for s in openai_schemas]
+        # Dedupe by name (MCP spec requires unique tool names; Windsurf hard-fails on duplicates).
+        # Keep first occurrence and warn — collision usually means the same tool was registered in two category modules.
+        seen: set[str] = set()
+        all_tools: list[types.Tool] = []
+        for t in all_tools_with_dupes:
+            if t.name in seen:
+                logger.warning(f"Duplicate tool name in schemas: {t.name!r} — keeping first occurrence")
+                continue
+            seen.add(t.name)
+            all_tools.append(t)
+        _all_tool_names = seen
         _mcp_tools = [t for t in all_tools if t.name in CORE_TOOLS]
         logger.info(f"Registered {len(_mcp_tools)} core tools ({len(_all_tool_names)} total available via bridge)")
     return _mcp_tools

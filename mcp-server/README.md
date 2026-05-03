@@ -93,7 +93,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) or 
 <details>
 <summary><strong>Windsurf</strong></summary>
 
-Edit `~/.codeium/windsurf/mcp_config.json`:
+In Windsurf, open **Windsurf Settings → MCP Servers → Open MCP Registry**, then click the settings (gear) icon to open `mcp_config.json`. Add the snippet below (or edit `~/.codeium/windsurf/mcp_config.json` directly):
 
 ```json
 {
