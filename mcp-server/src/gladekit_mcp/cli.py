@@ -309,6 +309,21 @@ def run_init(bridge_url: str = DEFAULT_BRIDGE_URL, force: bool = False, dry_run:
 # ── version ───────────────────────────────────────────────────────────────────
 
 
+def _upgrade_command() -> str:
+    """Detect install method and return the right upgrade command.
+
+    uvx caches resolved versions and won't pick up new releases without --refresh.
+    Most MCP users install via uvx (it's the recommended path in the README), so
+    suggesting `pip install --upgrade` strands them — pip often isn't even on PATH.
+    Detection: uvx installs each tool into its own env under ~/.local/share/uv/tools/
+    (or %APPDATA%\\uv\\tools\\ on Windows), so sys.executable contains uv/tools.
+    """
+    exe = sys.executable.replace("\\", "/")
+    if "/uv/tools/" in exe:
+        return "uvx --refresh gladekit-mcp"
+    return "pip install --upgrade gladekit-mcp"
+
+
 def run_version() -> int:
     print(f"gladekit-mcp {__version__}")
     try:
@@ -317,7 +332,7 @@ def run_version() -> int:
         latest = resp.json()["info"]["version"]
         if latest != __version__:
             print(f"Update available: {latest}")
-            print(f"  {_ARROW} pip install --upgrade gladekit-mcp")
+            print(f"  {_ARROW} {_upgrade_command()}")
         else:
             print("You are up to date.")
     except Exception:

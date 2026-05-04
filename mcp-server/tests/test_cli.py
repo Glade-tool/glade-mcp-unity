@@ -14,6 +14,7 @@ from gladekit_mcp.cli import (
     _check_python,
     _detect_genre,
     _render_glade_md,
+    _upgrade_command,
     run_doctor,
     run_version,
 )
@@ -297,18 +298,57 @@ def test_run_version_up_to_date(capsys):
     assert "up to date" in captured.out
 
 
-def test_run_version_update_available(capsys):
+def test_run_version_update_available_pip(capsys):
+    """Default install method shows pip upgrade command."""
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"info": {"version": "99.99.99"}}
     mock_resp.raise_for_status = MagicMock()
 
-    with patch("gladekit_mcp.cli.httpx.get", return_value=mock_resp):
+    with (
+        patch("gladekit_mcp.cli.httpx.get", return_value=mock_resp),
+        patch("gladekit_mcp.cli.sys.executable", "/usr/local/bin/python3"),
+    ):
         exit_code = run_version()
 
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "99.99.99" in captured.out
-    assert "pip install" in captured.out
+    assert "pip install --upgrade gladekit-mcp" in captured.out
+
+
+def test_run_version_update_available_uvx(capsys):
+    """uvx-installed copy shows uvx --refresh command (uvx caches by version)."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"info": {"version": "99.99.99"}}
+    mock_resp.raise_for_status = MagicMock()
+
+    uvx_exe = "/Users/danielfang/.local/share/uv/tools/gladekit-mcp/bin/python"
+    with (
+        patch("gladekit_mcp.cli.httpx.get", return_value=mock_resp),
+        patch("gladekit_mcp.cli.sys.executable", uvx_exe),
+    ):
+        exit_code = run_version()
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "uvx --refresh gladekit-mcp" in captured.out
+    assert "pip install" not in captured.out
+
+
+def test_upgrade_command_detection():
+    """_upgrade_command detects uvx-managed envs by sys.executable path."""
+    with patch("gladekit_mcp.cli.sys.executable", "/Users/x/.local/share/uv/tools/gladekit-mcp/bin/python"):
+        assert _upgrade_command() == "uvx --refresh gladekit-mcp"
+    # Windows path with backslashes
+    with patch(
+        "gladekit_mcp.cli.sys.executable", r"C:\Users\x\AppData\Roaming\uv\tools\gladekit-mcp\Scripts\python.exe"
+    ):
+        assert _upgrade_command() == "uvx --refresh gladekit-mcp"
+    # Default (system / venv / pip-installed) python
+    with patch("gladekit_mcp.cli.sys.executable", "/usr/local/bin/python3"):
+        assert _upgrade_command() == "pip install --upgrade gladekit-mcp"
+    with patch("gladekit_mcp.cli.sys.executable", "/Users/x/proj/.venv/bin/python"):
+        assert _upgrade_command() == "pip install --upgrade gladekit-mcp"
 
 
 def test_run_version_pypi_offline(capsys):
