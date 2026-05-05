@@ -30,18 +30,11 @@ namespace GladeAgenticAI.Bridge
         private const int Port = 8765;
         private static readonly string BaseUrl = $"http://localhost:{Port}/";
 
-        // Console watcher: main-thread-only event list + dedup tracking
-        private static readonly List<ConsoleLogEvent> _pendingLogEvents = new List<ConsoleLogEvent>();
-        private static readonly Dictionary<string, int> _logDedupCounts = new Dictionary<string, int>();
-        private const int MaxPendingLogEvents = 50;
-
-        private struct ConsoleLogEvent
-        {
-            public string message;
-            public string stackTrace;
-            public string logType;
-            public double timestamp;
-        }
+        // Console / runtime-error capture lives in RuntimeLogStream.cs (a
+        // proper [InitializeOnLoad] service with a 500-entry ring buffer +
+        // monotonic cursors + per-event fingerprints). This handler is now
+        // a thin delegate over that service. The service subscribes to
+        // logMessageReceivedThreaded itself, so we no longer hook it here.
         private const double ConnectionTimeoutSeconds = 10.0; // Consider disconnected if no request in 10 seconds
         private static int _compilationCount = 0;
 
@@ -63,47 +56,10 @@ namespace GladeAgenticAI.Bridge
             EditorApplication.update += ProcessRequests;
             CompilationPipeline.compilationFinished -= OnCompilationFinished;
             CompilationPipeline.compilationFinished += OnCompilationFinished;
-            // Console watcher: subscribe on background thread, marshal events to main thread via delayCall
-            Application.logMessageReceivedThreaded -= OnLogMessageReceived;
-            Application.logMessageReceivedThreaded += OnLogMessageReceived;
+            // Runtime log capture is owned by RuntimeLogStream ([InitializeOnLoad]
+            // in unity-bridge/Editor/Services/RuntimeLogStream.cs). It subscribes
+            // on its own static ctor; no hookup needed here.
             StartServer();
-        }
-
-        /// <summary>
-        /// Called on arbitrary threads when Unity logs a message. Marshal to main thread for safe queue access.
-        /// </summary>
-        private static void OnLogMessageReceived(string condition, string stackTrace, LogType type)
-        {
-            // Only capture errors and exceptions
-            if (type != LogType.Error && type != LogType.Exception) return;
-
-            string dedupKey = condition; // Dedup by message text only — NOT stacktrace (line numbers change after recompile)
-            string logTypeName = type.ToString();
-            double ts = (DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
-
-            EditorApplication.delayCall += () =>
-            {
-                lock (_pendingLogEvents)
-                {
-                    if (_logDedupCounts.TryGetValue(dedupKey, out int count))
-                    {
-                        _logDedupCounts[dedupKey] = count + 1;
-                        return; // Already queued; just increment count, don't add duplicate
-                    }
-                    _logDedupCounts[dedupKey] = 1;
-
-                    if (_pendingLogEvents.Count >= MaxPendingLogEvents)
-                        return; // Queue full — drop this event
-
-                    _pendingLogEvents.Add(new ConsoleLogEvent
-                    {
-                        message = condition,
-                        stackTrace = stackTrace,
-                        logType = logTypeName,
-                        timestamp = ts,
-                    });
-                }
-            };
         }
 
         private static void OnCompilationFinished(object obj)
@@ -1000,30 +956,24 @@ namespace GladeAgenticAI.Bridge
         }
 
         /// <summary>
-        /// Handle GET /api/console/events — returns and clears pending error/exception log events.
-        /// NOTE: This handler runs on the HttpListener background thread.
-        /// _pendingLogEvents is only written from the main thread (via EditorApplication.delayCall),
-        /// but drained here. Use a lock for thread-safe drain.
+        /// Handle GET /api/console/events — returns and clears pending error/
+        /// exception log events. Delegates to RuntimeLogStream which owns the
+        /// underlying ring buffer. Wire shape preserved exactly so the
+        /// renderer's useConsoleWatcher.ts continues to work unchanged.
         /// </summary>
         private static void HandleConsoleEvents(HttpListenerContext context)
         {
-            List<ConsoleLogEvent> snapshot;
-            lock (_pendingLogEvents)
-            {
-                snapshot = new List<ConsoleLogEvent>(_pendingLogEvents);
-                _pendingLogEvents.Clear();
-                _logDedupCounts.Clear();
-            }
+            var snapshot = RuntimeLogStream.DrainWithConditionDedup();
 
             var events = new List<object>();
             foreach (var evt in snapshot)
             {
                 events.Add(new
                 {
-                    message = evt.message,
-                    stackTrace = evt.stackTrace,
-                    logType = evt.logType,
-                    timestamp = evt.timestamp,
+                    message = evt.Message,
+                    stackTrace = evt.StackTrace,
+                    logType = evt.LogType,
+                    timestamp = evt.Timestamp,
                 });
             }
 

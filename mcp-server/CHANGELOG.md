@@ -2,6 +2,27 @@
 
 All notable changes to `gladekit-mcp` are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-05
+
+### Added
+
+- **Runtime / Live Loop tools (5 new).** A small surface for agents that want to watch a Unity Play session for runtime errors and orchestrate fixes:
+  - `start_runtime_observation` / `stop_runtime_observation` — arm/disarm runtime-event capture; the start call snapshots a baseline cursor so you only get events from arming forward.
+  - `get_runtime_events` — incremental cursor-based poll for `Error` / `Exception` log entries during Play Mode. Returns events with a stable per-event fingerprint (`condition + first 500 chars of stack`) plus `playModeActive`, `observationActive`, and `nextCursor` for the next call.
+  - `get_play_mode_state` — read-only snapshot of Play Mode state (isPlaying, last enter/exit timestamps, observation arming status). Useful for "watch for Play exit then act" flows.
+  - `apply_queued_fix` — idempotent multi-step fix dispatcher keyed on `proposalId`. Each `change` is a `{toolName, args, rationale}` triple dispatched through the same path as direct tool calls (so DemoAssetsGuard and SessionTracker hooks fire uniformly). A second call with the same `proposalId` returns `alreadyApplied:true` with the prior result instead of re-executing — safe for retry-on-blip flows.
+- **Bridge services to back the Runtime tools (in `unity-bridge/`):** `RuntimeLogStream` (500-entry ring buffer with monotonic cursors and condition-only legacy drain for the existing `/api/console/events` endpoint), `PlayModeObserver` (Play Mode lifecycle tracker, survives domain reload), and `FixApplyTracker` (idempotency registry capped at 200 entries).
+- New `runtime` tool category exposed via the standard category-aware filter; the 5 tools are also added to `CORE_TOOLS` so they appear in Claude Code's default tool list.
+
+### Changed
+
+- **`/api/console/events` endpoint behavior change (internal, wire-compatible).** The legacy drain no longer mutates the ring buffer — it tracks a per-server `_legacyDrainCursor` and returns events past it. This lets cursor-based consumers (`get_runtime_events`) and the legacy drain coexist without stealing events from each other. The HTTP response shape is unchanged.
+- **`UnityBridgeServer` slimmed by ~50 LOC.** The inline `Application.logMessageReceivedThreaded` subscription + 50-entry queue moved into `RuntimeLogStream`. The bridge static ctor no longer hooks the log event itself.
+
+### Notes
+
+- `propose_fix` is intentionally NOT exposed via the MCP server. It is a cloud-side intercept used by the GladeKit desktop app's Live Loop runner; the bridge has no handler for it. External MCP clients should construct fix payloads themselves and dispatch via `apply_queued_fix` directly.
+
 ## [0.4.5] - 2026-05-03
 
 ### Changed

@@ -175,6 +175,18 @@ _CATEGORY_KEYWORDS: Dict[str, List[str]] = {
         r"\bwaypoint\b",
         r"\bai path\b",
     ],
+    "runtime": [
+        r"\bplay mode\b",
+        r"\bplaymode\b",
+        r"\blive loop\b",
+        r"\bruntime error\b",
+        r"\bruntime exception\b",
+        r"\bnull ?ref\b",
+        r"\bnre\b",
+        r"\bobserve errors?\b",
+        r"\bwatch errors?\b",
+        r"\bapply.*fix\b",
+    ],
 }
 
 _COMPILED_KEYWORDS: Dict[str, List[re.Pattern]] = {

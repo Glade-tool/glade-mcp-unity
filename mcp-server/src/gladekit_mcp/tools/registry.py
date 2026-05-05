@@ -134,6 +134,12 @@ CORE_TOOLS: set[str] = {
     "add_animator_transition",
     # ── Console & diagnostics ─────────────────────────────────────────────────
     "get_unity_console_logs",
+    # ── Runtime / Live Loop ───────────────────────────────────────────────────
+    "start_runtime_observation",
+    "stop_runtime_observation",
+    "get_runtime_events",
+    "get_play_mode_state",
+    "apply_queued_fix",
 }
 # NOTE: Unity AI Gateway has a cloud schema token budget (~76 small tools).
 # Demoted to extended-only (still callable via get_relevant_tools):

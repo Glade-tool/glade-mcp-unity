@@ -41,6 +41,8 @@ from .prefabs import CATEGORY as PREFAB_CATEGORY
 from .prefabs import TOOLS as PREFAB_TOOLS
 from .profiler import CATEGORY as PROFILER_CATEGORY
 from .profiler import TOOLS as PROFILER_TOOLS
+from .runtime import CATEGORY as RUNTIME_CATEGORY
+from .runtime import TOOLS as RUNTIME_TOOLS
 from .scene import CATEGORY as SCENE_CATEGORY
 from .scene import TOOLS as SCENE_TOOLS
 from .scripting import CATEGORY as SCRIPTING_CATEGORY
@@ -69,6 +71,7 @@ ALL_CATEGORIES = [
     (UI_CATEGORY, UI_TOOLS),
     (INPUT_CATEGORY, INPUT_TOOLS),
     (TERRAIN_NAV_CATEGORY, TERRAIN_NAV_TOOLS),
+    (RUNTIME_CATEGORY, RUNTIME_TOOLS),
 ]
 
 # Categories always included regardless of request content
