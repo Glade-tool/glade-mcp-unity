@@ -64,6 +64,15 @@ func execute(args: Dictionary) -> Dictionary:
 			"content is required (Godot uses `content`; if you reached for `scriptContent` / `scriptText`, that's a Unity habit — use `content`)"
 		)
 	var content: String = ToolUtils.parse_string_arg(args, content_key)
+	# Key presence is not proof of a body: `content: null` parses to "" and would
+	# create a 0-byte script that reports success, leaving the caller convinced it
+	# wrote working code. Gate on the value, as modify_script does.
+	if content.strip_edges().is_empty():
+		return ToolUtils.error(
+			"`%s` was provided but empty — refusing to create a blank script at '%s'. " % [content_key, script_path]
+			+ "Send the full file body (at minimum an `extends` line).",
+			{"script_path": script_path, "reason": "emptyContentRejected"}
+		)
 
 	# Ensure parent directory exists. DirAccess.make_dir_recursive_absolute
 	# returns OK if the dir already exists; we check globalize_path so the

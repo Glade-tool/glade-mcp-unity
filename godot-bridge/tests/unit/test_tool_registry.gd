@@ -56,10 +56,15 @@ func test_registry_contains_all_mvp_tools() -> void:
 	# raycast (1) = 102; overlap_shape (1) = 103; shape_cast (1) = 104;
 	# snap_to_ground (1) = 105; configure_physics_body (1, was registered
 	# earlier but never added to this tally — corrected here) = 106;
-	# run_gameplay_probe (1) = 107 total.
+	# run_gameplay_probe (1) = 107; check_script_errors (1) = 108.
+	# The running tally above had drifted 2 behind the actual registration list
+	# (as it did once before for configure_physics_body): a live bridge reports
+	# 110 registered tools via tools/list, which returns _tools.keys() and is the
+	# same set get_tool_count() sizes. Corrected to the measured 110 — prefer the
+	# bridge's own count over this comment if the two ever disagree again.
 	# (create_camera_3d → create_camera was a rename, not an add; it stays callable
 	# via a registry alias which does NOT count toward get_tool_count.)
-	assert_eq(registry.get_tool_count(), 107, "Catalog should register exactly 107 tools")
+	assert_eq(registry.get_tool_count(), 110, "Catalog should register exactly 110 tools")
 
 	# Critical names that must be present for the schema-mock layer to wire
 	# up correctly. Failing here means a registration line went missing.
@@ -73,7 +78,7 @@ func test_registry_contains_all_mvp_tools() -> void:
 		"set_node_parent", "set_node_transform", "arrange_nodes", "snap_to_ground", "set_node_resource",
 		# Phase 2 — Script
 		"create_script", "modify_script", "get_script_content", "find_scripts",
-		"find_references", "find_scene_usages",
+		"find_references", "find_scene_usages", "check_script_errors",
 		"attach_script_to_node", "create_third_person_controller",
 		"create_2d_controller", "create_screen_shake", "create_juice", "create_scene_transition",
 		"create_game_manager", "create_collectible", "create_hazard", "create_enemy_2d",

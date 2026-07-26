@@ -110,6 +110,7 @@ GODOT_READ_ONLY_TOOLS: frozenset = frozenset(
         "find_scripts",
         "find_references",
         "find_scene_usages",
+        "check_script_errors",
         # Runtime/observability reads
         "get_godot_console_logs",
         "get_play_mode_state",

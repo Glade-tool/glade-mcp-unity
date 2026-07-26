@@ -87,6 +87,19 @@ func execute(args: Dictionary) -> Dictionary:
 				+ "(Godot uses `content`; `scriptContent`/`scriptText` is a Unity habit.)"
 			)
 		content = ToolUtils.parse_string_arg(args, content_key)
+		# The key being present is NOT proof a body came with it. `content: null`
+		# (a model that emitted the parameter but no value) parses to "" and would
+		# sail through to the write below, erasing the file and reporting
+		# {"success": true, "bytes": 0} — which reads to the caller as "done".
+		# Gate on the VALUE, matching ModifyScriptTool.cs's IsNullOrEmpty check.
+		if content.strip_edges().is_empty():
+			return ToolUtils.error(
+				"`%s` was provided but empty — refusing to erase '%s'. " % [content_key, script_path]
+				+ "Send the complete new file body in `content`, or use `old_string`/`new_string` "
+				+ "to edit one snippet. To empty a script deliberately, write a body such as "
+				+ "`extends Node` instead of an empty string.",
+				{"script_path": script_path, "reason": "emptyContentRejected"}
+			)
 
 	if not FileAccess.file_exists(script_path):
 		return ToolUtils.error("File does not exist at '%s' (use create_script to create a new script)" % script_path)
@@ -141,6 +154,18 @@ func execute(args: Dictionary) -> Dictionary:
 		else:
 			content = _replace_first(current, old_string, new_string)
 			replacements = 1
+
+	# Final net, covering the surgical path too: an old_string that spans the
+	# whole file with an empty new_string also lands here with nothing to write.
+	# Whatever the mode, turning a non-empty script into an empty file is data
+	# loss the caller almost never asked for, so refuse rather than report success.
+	if content.strip_edges().is_empty():
+		return ToolUtils.error(
+			"This edit would leave '%s' empty, erasing the whole script — refused. " % script_path
+			+ "Narrow `old_string` to just the snippet you meant to replace, or send the "
+			+ "complete new body in `content`.",
+			{"script_path": script_path, "reason": "emptyResultRejected"}
+		)
 
 	var file := FileAccess.open(script_path, FileAccess.WRITE)
 	if file == null:

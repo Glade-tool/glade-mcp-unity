@@ -316,6 +316,37 @@ TOOLS: List[Dict] = [
     {
         "type": "function",
         "function": {
+            "name": "check_script_errors",
+            "description": (
+                "Verify that GDScript file(s) actually parse and type-check. ALWAYS call this "
+                "immediately after create_script, modify_script, or any scaffolder that writes a "
+                "script — it is the Godot equivalent of a compile check. Writing a broken .gd file "
+                "otherwise produces NO error signal: the write reports success and the failure only "
+                "surfaces later as a scene that won't start. Catches syntax errors, static type "
+                "violations ('Cannot assign a value of type String ... int'), and calls to functions "
+                "that don't exist — each with the exact file and line number. If error_count > 0, fix "
+                "the reported line and re-check; do NOT report the work as done until clean is true."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "script_paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "res:// paths of the scripts to verify (e.g. ['res://scripts/player.gd']). Pass every script you just wrote in this turn. Max 12 per call.",
+                    },
+                    "script_path": {
+                        "type": "string",
+                        "description": "Convenience alias for checking a single script.",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "attach_script_to_node",
             "description": (
                 "Attach an existing GDScript to a node in the edited scene. Each Godot "

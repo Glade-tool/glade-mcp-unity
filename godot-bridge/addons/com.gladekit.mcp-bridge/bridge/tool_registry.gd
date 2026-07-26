@@ -43,6 +43,10 @@ const FindScriptsTool        = preload("res://addons/com.gladekit.mcp-bridge/too
 const FindReferencesTool     = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/script/find_references.gd")
 const RenameSymbolTool       = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/script/rename_symbol.gd")
 const FindSceneUsagesTool    = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/script/find_scene_usages.gd")
+# Post-write verification: runs the engine's parser/type-analyser over a script
+# and reports errors with line numbers, so a broken write is caught immediately
+# instead of surfacing later as a scene that will not start.
+const CheckScriptErrorsTool  = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/script/check_script_errors.gd")
 const AttachScriptToNodeTool = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/script/attach_script_to_node.gd")
 # Vetted-template scaffolder: writes a known-good CharacterBody3D controller +
 # decoupled orbit camera verbatim, so the model can't re-derive the
@@ -332,6 +336,7 @@ func _register_all() -> void:
 	register_tool(FindReferencesTool.new())
 	register_tool(RenameSymbolTool.new())
 	register_tool(FindSceneUsagesTool.new())
+	register_tool(CheckScriptErrorsTool.new())
 	register_tool(AttachScriptToNodeTool.new())
 	register_tool(CreateThirdPersonControllerTool.new())
 	register_tool(Create2DControllerTool.new())
