@@ -30,6 +30,7 @@ from gladekit_mcp.schemas.godot import (
     get_godot_tool_schemas,
 )
 from gladekit_mcp.tools.registry import _build_tool_list
+from tests.sdk_fields import model_field
 
 # Some tools live in the schema catalog (the agent must see them) but are
 # answered by the server itself rather than dispatched to the engine bridge, so
@@ -255,7 +256,7 @@ def test_read_only_tools_get_readonly_hint_annotation():
     for name in GODOT_READ_ONLY_TOOLS:
         tool = by_name[name]
         assert tool.annotations is not None, f"{name} should carry annotations"
-        assert tool.annotations.readOnlyHint is True, f"{name} should have readOnlyHint=True"
+        assert model_field(tool.annotations, "readOnlyHint") is True, f"{name} should have readOnlyHint=True"
 
 
 def test_mutating_tools_have_no_readonly_hint():
@@ -267,10 +268,10 @@ def test_mutating_tools_have_no_readonly_hint():
     for tool in tools:
         if tool.name in GODOT_READ_ONLY_TOOLS:
             continue
-        hint = None if tool.annotations is None else tool.annotations.readOnlyHint
+        hint = None if tool.annotations is None else model_field(tool.annotations, "readOnlyHint")
         assert hint is not True, f"{tool.name} is mutating but advertises readOnlyHint=True"
     # Spot-check the three deceptive ones explicitly.
     by_name = {t.name: t for t in tools}
     for name in ("run_project", "stop_project", "launch_editor"):
-        hint = None if by_name[name].annotations is None else by_name[name].annotations.readOnlyHint
+        hint = None if by_name[name].annotations is None else model_field(by_name[name].annotations, "readOnlyHint")
         assert hint is not True, f"{name} must not be marked read-only"

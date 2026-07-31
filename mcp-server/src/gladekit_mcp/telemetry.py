@@ -170,9 +170,9 @@ class BatchDisciplineCounters:
     _started_at: float = field(default_factory=time.time)
 
 
-# Session-id → counters. The session_id key is supplied by the caller (in
-# server.py we use ``id(server.request_context.session)`` packaged via
-# ``_current_session_id``); under stdio there's only one session.
+# Session-id → counters. The session_id key is supplied by the caller (server.py
+# passes ``_current_session_id()``, which identifies the client connection —
+# see ``sdk_compat.current_session_key``); under stdio there's only one session.
 _session_counters: Dict[str, BatchDisciplineCounters] = {}
 
 

@@ -4,6 +4,11 @@ GladeKit MCP Server — connects AI clients to Unity Editor.
 Uses the low-level mcp.server.Server API for tool registration (we have
 222+ pre-existing JSON schemas) and FastMCP-style helpers for resources.
 Runs on stdio transport for compatibility with Cursor, Claude Code, Windsurf.
+
+The handlers below are plain async functions rather than decorated ones:
+sdk_compat.create_server() binds them to whichever generation of the MCP SDK
+is installed, since 1.x and 2.x register handlers in incompatible ways. See
+sdk_compat for what differs and what does not.
 """
 
 from __future__ import annotations
@@ -13,7 +18,6 @@ import logging
 import os
 
 from mcp import types
-from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from . import (
@@ -29,6 +33,7 @@ from . import (
     telemetry,
 )
 from .prompts import build_prompt_from_bridge
+from .sdk_compat import create_server, current_session_key, optional_kwargs
 from .tools.registry import dispatch_tool_call, get_active_engine, get_mcp_tools_async, sanitize_args
 from .tools.task_filter import get_relevant_tool_summary
 
@@ -52,26 +57,18 @@ _INSTRUCTIONS = (
     "not burn calls on cold-start exploration."
 )
 
-server = Server(
-    "gladekit-mcp",
-    instructions=_INSTRUCTIONS,
-)
-
 # ── In-session memory ─────────────────────────────────────────────────────────
 # Facts the AI stores during the current session. Under stdio (one process =
-# one conversation) there's a single ServerSession. Under streamable-HTTP each
-# mcp-session-id gets its own ServerSession, so using id(session) as the key
-# scopes state per client without reaching into the transport internals.
+# one conversation) there's a single connection. Under streamable-HTTP each
+# mcp-session-id gets its own, so keying on the connection scopes state per
+# client without reaching into the transport internals. sdk_compat owns the
+# derivation because what identifies a connection differs between SDK majors.
 _session_memory: dict[str, list[str]] = {}
 
 
 def _current_session_id() -> str:
     """Return a stable per-client key. Falls back to "_stdio" outside a request."""
-    try:
-        ctx = server.request_context
-    except LookupError:
-        return "_stdio"
-    return f"mcp-{id(ctx.session)}"
+    return current_session_key()
 
 
 def _current_session_memory() -> list[str]:
@@ -198,7 +195,6 @@ _META_TOOLS = [
 # ── Tool handlers ─────────────────────────────────────────────────────────────
 
 
-@server.list_tools()
 async def list_tools() -> list[types.Tool]:
     """Return the active engine's tools + meta-tools as MCP tool definitions.
 
@@ -215,7 +211,6 @@ async def list_tools() -> list[types.Tool]:
     return engine_tools + _META_TOOLS
 
 
-@server.call_tool()
 async def call_tool(
     name: str,
     arguments: dict,
@@ -423,7 +418,6 @@ def _maybe_image_content(result: str):
 # ── Resources ─────────────────────────────────────────────────────────────────
 
 
-@server.list_resources()
 async def list_resources() -> list[types.Resource]:
     return [
         types.Resource(
@@ -488,7 +482,6 @@ async def list_resources() -> list[types.Resource]:
     ]
 
 
-@server.read_resource()
 async def read_resource(uri: str) -> str:
     uri_str = str(uri)
 
@@ -597,7 +590,6 @@ async def read_resource(uri: str) -> str:
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
 
-@server.list_prompts()
 async def list_prompts() -> list[types.Prompt]:
     return [
         types.Prompt(
@@ -611,7 +603,6 @@ async def list_prompts() -> list[types.Prompt]:
     ]
 
 
-@server.get_prompt()
 async def get_prompt(name: str, arguments: dict | None = None) -> types.GetPromptResult:
     if name == "unity-assistant":
         # Determine project path for skill calibration
@@ -656,6 +647,23 @@ async def get_prompt(name: str, arguments: dict | None = None) -> types.GetPromp
             ],
         )
     raise ValueError(f"Unknown prompt: {name}")
+
+
+# ── Server binding ────────────────────────────────────────────────────────────
+# Built after the handlers because the 2.x SDK takes them as constructor
+# arguments. The handlers above stay importable and directly callable, which is
+# how the tests drive them.
+
+server = create_server(
+    "gladekit-mcp",
+    instructions=_INSTRUCTIONS,
+    list_tools=list_tools,
+    call_tool=call_tool,
+    list_resources=list_resources,
+    read_resource=read_resource,
+    list_prompts=list_prompts,
+    get_prompt=get_prompt,
+)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -735,7 +743,12 @@ def build_http_app(
         json_response=False,
         stateless=False,
         security_settings=security_settings,
-        session_idle_timeout=1800,
+        # Reaping sessions whose client vanished arrived in SDK 1.27. An SDK
+        # without it keeps them until the process exits — exactly what every
+        # release before 1.27 did, so dropping the argument degrades to that
+        # rather than raising. Not worth making an opt-in transport's tuning
+        # knob decide whether the package installs at all.
+        **optional_kwargs(StreamableHTTPSessionManager.__init__, session_idle_timeout=1800),
     )
 
     class _MCPAsgiApp:

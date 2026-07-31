@@ -136,7 +136,7 @@ If your change requires a new bridge version (e.g. you added a tool the schema p
 
 ## Code style
 
-- Python 3.10+, async/await throughout
+- Python 3.11+, async/await throughout (the Godot bridge path uses `asyncio.timeout()`, added in 3.11)
 - Formatted with `ruff format`, linted with `ruff check`
 - Type hints on all public functions
 - Line length: 120 characters

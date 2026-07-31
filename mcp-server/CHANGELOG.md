@@ -4,6 +4,20 @@ All notable changes to `gladekit-mcp` are documented here. Format follows [Keep 
 
 ## [Unreleased]
 
+## [0.7.21] - 2026-07-30
+
+### Fixed
+
+- **Works with MCP SDK 2.x, and no longer installs an SDK it cannot run.** The `mcp[cli]` requirement was open-ended (`>=1.0`), so once SDK 2.0 was released every fresh install pulled it in — and 2.0 removed the `@server.list_tools()` / `@server.call_tool()` decorators this server registered its handlers with. The result was a startup failure reading `AttributeError: 'Server' object has no attribute 'list_tools'`, with nothing pointing at the cause.
+
+  The server now supports **both** SDK generations. Handlers are bound to whichever one is importable, so `gladekit-mcp` works whether the host application supplies a 1.x or a 2.x SDK. Behaviour is identical across the two: the same resource content types, the same validation of tool arguments against the advertised `inputSchema`, and the same conversion of a tool error into a readable result rather than a transport failure.
+
+  The supported range is now `mcp[cli]>=1.10,<3`, and every edge of it — the floor, the newest 1.x, the newest 2.x — is exercised by the test suite. The floor rose from the nominal `>=1.0` because 1.10 is the first release with the DNS-rebinding protection the HTTP transport enables and the content types the tools return; earlier versions could not have run. Optional refinements no longer constrain it: the HTTP transport's idle-session timeout (added in SDK 1.27) is applied when the installed SDK supports it and skipped when it does not, rather than making an opt-in transport's tuning knob decide whether the package installs at all.
+
+### Changed
+
+- **Per-client session state is now keyed to the connection rather than the SDK's session object.** Facts stored with `remember_for_session`, along with telemetry and skill calibration, are scoped per connection. SDK 2.x builds a new session object for every request, so the previous key changed mid-conversation and nothing stored was ever recalled. The new key is stable for the life of a connection, distinct between concurrent clients, and no longer derived from an object address — which could be reused after a client disconnected and leak one session's notes into the next.
+
 ## [0.7.15] - 2026-07-16
 
 ### Changed

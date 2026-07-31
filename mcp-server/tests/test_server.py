@@ -3,6 +3,7 @@
 import pytest
 
 from gladekit_mcp.server import list_tools
+from tests.sdk_fields import model_field
 
 
 @pytest.mark.asyncio
@@ -17,7 +18,7 @@ async def test_list_tools_returns_expected_count():
     # Each entry should be a valid MCP Tool with name and inputSchema
     for tool in tools:
         assert tool.name, f"Tool missing name: {tool}"
-        assert tool.inputSchema is not None, f"Tool {tool.name} missing inputSchema"
+        assert model_field(tool, "inputSchema") is not None, f"Tool {tool.name} missing inputSchema"
 
     # Core tools (~80) + 4 meta-tools = 84+
     # Use a conservative lower bound to avoid brittleness

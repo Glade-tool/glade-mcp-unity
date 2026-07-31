@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gladekit-mcp"
-version = "0.7.20"
+version = "0.7.21"
 description = "MCP server for Unity game development — connect Cursor, Claude Code, Windsurf, and other AI clients to your Unity Editor."
 readme = "README.md"
 license = "MIT"
@@ -14,7 +14,31 @@ license = "MIT"
 # misleading "bridge unreachable" error.
 requires-python = ">=3.11"
 dependencies = [
-    "mcp[cli]>=1.0",
+    # Both bounds are load-bearing, and the range is deliberately wide: this
+    # package is usually installed into an environment its host application
+    # controls, so every version excluded here is a host it cannot coexist with.
+    #
+    # Floor: 1.10 is the first release carrying both TransportSecuritySettings
+    # (DNS-rebinding protection for the HTTP transport) and types.ContentBlock.
+    # Those are requirements, not refinements, so they set the floor honestly.
+    # Later niceties do not: see optional_kwargs() in sdk_compat.py, which drops
+    # arguments an older SDK never had rather than letting one raise the floor.
+    #
+    # Ceiling: 2.0 redesigned the low-level Server API — the @server.list_tools()
+    # / @server.call_tool() decorators were removed in favour of constructor
+    # callbacks. sdk_compat.py binds our handlers to whichever generation is
+    # importable, so both are supported, but 3.x is presumed breaking until
+    # proven otherwise.
+    #
+    # CI runs the full suite at the floor, at the newest 1.x, and at the newest
+    # 2.x. A bound nothing exercises is a guess; test_dependency_bounds.py fails
+    # if a job ever resolves an SDK outside what is declared here.
+    "mcp[cli]>=1.10,<3",
+    # Used directly by sdk_compat.py to validate tool arguments on SDK 2.x,
+    # which (unlike 1.x) does not validate them for us. Already a hard
+    # dependency of both SDK generations — declared explicitly because we
+    # import it rather than relying on it arriving transitively.
+    "jsonschema>=4.20.0",
     "httpx>=0.25.0",
     "openai>=1.0.0",
     "numpy>=1.21.0",

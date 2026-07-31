@@ -13,6 +13,7 @@ from gladekit_mcp.tools.registry import (
     dispatch_tool_call,
     get_mcp_tools,
 )
+from tests.sdk_fields import model_field
 
 # ── Schema validation ────────────────────────────────────────────────────────
 
@@ -134,8 +135,9 @@ class TestSchemaConversion:
         mcp_tool = _convert_openai_to_mcp(openai_schema)
         assert mcp_tool.name == "test_tool"
         assert mcp_tool.description == "A test tool"
-        assert mcp_tool.inputSchema["type"] == "object"
-        assert "name" in mcp_tool.inputSchema["properties"]
+        schema = model_field(mcp_tool, "inputSchema")
+        assert schema["type"] == "object"
+        assert "name" in schema["properties"]
 
     def test_handles_missing_parameters(self):
         """Tools with no parameters get a default empty schema."""
@@ -147,7 +149,7 @@ class TestSchemaConversion:
             },
         }
         mcp_tool = _convert_openai_to_mcp(openai_schema)
-        assert mcp_tool.inputSchema == {"type": "object", "properties": {}}
+        assert model_field(mcp_tool, "inputSchema") == {"type": "object", "properties": {}}
 
 
 # ── Argument sanitization ────────────────────────────────────────────────────
