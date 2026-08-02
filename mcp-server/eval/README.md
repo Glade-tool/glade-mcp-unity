@@ -209,20 +209,33 @@ Add to the appropriate suite file and import in `eval/run.py`.
 
 ## CI integration
 
-```yaml
-# .github/workflows/mcp-tests.yml
-- name: Run MCP unit + integration tests
-  run: |
-    pip install -e ".[dev]"
-    pytest tests/ -v --tb=short
-  working-directory: mcp-server
+Runs in `.github/workflows/mcp-server-ci.yml`, as a step in the `test` job:
 
+```yaml
 - name: Run MCP eval harness
-  run: python -m eval.run --suite all --save
-  working-directory: mcp-server
+  run: uv run --no-sync python -m eval.run --suite all
 ```
 
+Because it is a step in that job, it inherits the **MCP SDK matrix** — the
+harness runs once per SDK leg (1.10 floor, latest 1.x, latest 2.x). That is the
+point: `sdk_compat.py` binds handlers differently across SDK majors, and this
+harness exercises the dispatch path those bindings sit on.
+
 Exit code 1 on any failure, compatible with standard CI gates.
+
+> This section previously documented a `.github/workflows/mcp-tests.yml` that
+> did not exist, so the harness ran only when someone remembered to run it by
+> hand.
+
+### What this harness does NOT gate on
+
+**Latency.** `latency_budget_exceeded` is computed and reported but is not a
+pass/fail term. It used to be, which is the policy the Proxy harness retired on
+evidence in 2026-07: a wide-margin latency gate still fired on 11 of 37 cases in
+a run where every case passed, and re-running at lower concurrency moved the
+same deltas by 100 percentage points with no code change. The argument is
+stronger here — there is no model in the loop at all, so wall-clock is mostly
+process startup and runner scheduling.
 
 ---
 
