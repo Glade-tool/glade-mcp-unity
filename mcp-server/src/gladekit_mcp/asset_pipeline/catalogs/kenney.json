@@ -8,7 +8,7 @@
   "license_summary": "Public domain. No attribution required for any use, including commercial. Crediting 'Kenney.nl' is appreciated but not required.",
   "attribution_required": false,
   "attribution_recommended": "Kenney.nl",
-  "indexed_at": "2026-05-24",
+  "indexed_at": "2026-08-02",
   "indexing_strategy": "hand_curated_seed_v0_1",
   "notes": "Hand-curated seed list of widely-used Kenney packs. Per-pack download_url + thumbnail_url values are pre-baked into this catalog by scripts/build_kenney_index.py (Kenney rotates both the download zip's random-id segment and the og:image's random-id segment when packs update). Refresh quarterly or when a user reports a stale download. Dead packs (Kenney occasionally retires/renames without redirect) are purged by the indexer; commit the resulting diff after each refresh. Coverage target for v0.1: 35-40 packs spanning sprite_2d (platformer, top-down, UI, pixel), model_3d (kits, characters, vehicles), and audio_sfx (UI, impact, sci-fi, RPG).",
   "packs": [
@@ -416,9 +416,9 @@
       ],
       "approx_assets": 80,
       "official_page": "https://kenney.nl/assets/mini-dungeon",
-      "download_url": "https://kenney.nl/media/pages/assets/mini-dungeon/6cd72dc849-1771249391/kenney_mini-dungeon.zip",
-      "thumbnail_url": "https://kenney.nl/media/pages/assets/mini-dungeon/5b23e91c6e-1771249373/sample.png",
-      "url_fingerprint": "3ab5a4d43ff6"
+      "download_url": "https://kenney.nl/media/pages/assets/mini-dungeon/6cd72dc849-1785314274/kenney_mini-dungeon.zip",
+      "thumbnail_url": "https://kenney.nl/media/pages/assets/mini-dungeon/5b23e91c6e-1785314288/sample.png",
+      "url_fingerprint": "69e92f0e51c9"
     },
     {
       "id": "kenney/survival-kit",
