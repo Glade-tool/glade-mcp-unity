@@ -114,7 +114,7 @@ TOOLS: List[Dict] = [
         "type": "function",
         "function": {
             "name": "destroy_game_object_batch",
-            "description": "Destroy multiple GameObjects in the scene.",
+            "description": "Destroy MULTIPLE GameObjects in ONE call \u2014 always prefer this over repeating destroy_game_object. Use it for clearing a set: all spawned enemies, every placeholder cube, a whole group of props. Takes the list of paths to remove.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -474,7 +474,7 @@ TOOLS: List[Dict] = [
         "type": "function",
         "function": {
             "name": "set_transform",
-            "description": "Set world position/rotation/scale of a GameObject. Required after create_primitive when positioning is specified. Use get_gameobject_info to find a reference object's position, then calculate and set the target.",
+            "description": "Set world position/rotation/scale of a SINGLE GameObject. Required after create_primitive when positioning is specified. Use get_gameobject_info to find a reference object's position, then calculate and set the target. For TWO OR MORE objects use set_transform_batch instead \u2014 one batch call beats N sequential ones on both latency and cost.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -541,7 +541,7 @@ TOOLS: List[Dict] = [
         "type": "function",
         "function": {
             "name": "set_transform_batch",
-            "description": "Apply transforms to multiple objects in one call.",
+            "description": "Apply transforms to MULTIPLE objects in ONE call \u2014 always prefer this over repeating set_transform when positioning, rotating or scaling more than one object. THE tool for laying out a scene: a row/grid/circle of platforms, scattering props, spacing waypoints, arranging spawn points, positioning a set of coins or enemies. Each entry takes the same args as set_transform (gameObjectPath, position/rotation/scale as 'x,y,z', operation set|add|multiply). Measured in production: turns that positioned objects one at a time spent 48-56 sequential round-trips where a single batch call would do \u2014 that is minutes of the user's time and a large multiple of the cost. If you are about to call set_transform a second time in the same turn, batch the rest instead.",
             "parameters": {
                 "type": "object",
                 "properties": {
