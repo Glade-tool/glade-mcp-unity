@@ -4,6 +4,20 @@ All notable changes to `gladekit-mcp` are documented here. Format follows [Keep 
 
 ## [Unreleased]
 
+## [0.7.22] - 2026-08-04
+
+### Fixed
+
+- **Scaffolding a controller now reuses what is already there instead of duplicating it.** `create_third_person_controller` treated every invocation as a fresh setup, so running it on a scene that already had a player produced a second capsule, a second camera and a second set of scripts. It now detects the existing objects and wires those, and the whole scaffold is registered as a single undoable step so one Undo reverts the turn rather than leaving half the objects behind.
+
+- **`create_third_person_controller` no longer fires on physics-only requests.** Its selection guidance read as a general "player setup" cue, so asking to make an existing object fall with gravity could scaffold an entire controller, camera and capsule. The description now states the movement + jump + follow-camera trigger is a conjunction and points physics-only requests at `add_rigidbody` / `add_component`.
+
+### Changed
+
+- **The batch scene tools are now reachable.** `destroy_gameobjects_batch` and `set_transform_batch` existed but described themselves so tersely that the model almost never chose them over repeating the single-object call. Production turns were spending 48–56 sequential round-trips laying out objects one at a time where one batch call would do. Their descriptions — and `set_transform`'s, which now points at the batch variant — say plainly when to prefer batching. Measured tool selection on the relevant eval cases went from 1/4 to 4/4.
+
+- Refreshed the bundled Kenney asset catalog.
+
 ## [0.7.21] - 2026-07-30
 
 ### Fixed
