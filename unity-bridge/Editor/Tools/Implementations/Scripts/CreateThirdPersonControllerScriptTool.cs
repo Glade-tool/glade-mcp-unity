@@ -82,7 +82,7 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Scripts
 
             // Resolve every template up front so a missing-template failure happens
             // before we write anything (no half-written controller).
-            var resolved = new List<(string templatePath, string scriptPath)>();
+            var resolved = new List<(string templatePath, string scriptName)>();
             foreach (var (template, scriptName) in Scripts)
             {
                 string templatePath = ToolUtils.ResolveTemplatePath(template);
@@ -92,48 +92,71 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Scripts
                         $"Template '{template}' could not be found in any known bridge location. " +
                         "The bridge install may be incomplete — reinstall com.gladekit.mcp-bridge.");
                 }
-                resolved.Add((templatePath, $"{directory}/{scriptName}"));
+                resolved.Add((templatePath, scriptName));
             }
 
-            // ── Session-aware overwrite guard (mirrors CreateScriptTool) ──────
-            // Refuse to clobber a pre-existing file we did NOT create this session
-            // unless the caller explicitly opts in. Checked for ALL targets before
-            // any write so we never leave one script overwritten and the other not.
-            if (!confirmExistingFileModification)
+            // ── Reuse-don't-refuse, PROJECT-WIDE (see ResolveTarget) ──────────
+            // Resolve every target before writing anything, so a scaffold never
+            // half-lands.
+            var targets = new List<ScriptTarget>();
+            foreach (var (templatePath, scriptName) in resolved)
             {
-                foreach (var (_, scriptPath) in resolved)
+                targets.Add(ResolveTarget(templatePath, scriptName, directory,
+                    confirmExistingFileModification));
+            }
+
+            var createdScripts = new List<string>();   // paths this call WROTE
+            var scriptPaths = new List<string>();      // paths in play (written or reused)
+            var reuseNotes = new List<string>();
+            var collisionWarnings = new List<string>();
+
+            foreach (var t in targets)
+            {
+                scriptPaths.Add(t.Path);
+
+                if (t.DuplicatePaths.Count > 1)
                 {
-                    if (File.Exists(scriptPath)
-                        && !SessionTracker.WasScriptCreatedThisSession(scriptPath))
-                    {
-                        var refusedExtras = new Dictionary<string, object>
-                        {
-                            { "scriptPath", scriptPath },
-                            { "reason", "preExistingScriptWithoutConfirmation" },
-                        };
-                        return ToolUtils.CreateErrorResponse(
-                            $"Refused to overwrite '{scriptPath}' — it already exists and was not created in this session. " +
-                            "If the user explicitly asked to regenerate the controller, retry with confirmExistingFileModification=true. " +
-                            "Otherwise pass a different 'directory' so you don't clobber existing user code.",
-                            refusedExtras);
-                    }
+                    // Pre-existing breakage we did not cause, but the caller can't
+                    // diagnose CS0101 from the console alone — name the files.
+                    collisionWarnings.Add(
+                        $"'{t.ScriptName}' exists {t.DuplicatePaths.Count} times in this project " +
+                        $"({string.Join(", ", t.DuplicatePaths)}). Unity compiles every script under " +
+                        "Assets/ into one assembly, so duplicate class names fail to compile (CS0101). " +
+                        "Delete all but one copy.");
                 }
-            }
 
-            if (!Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
+                if (!t.ShouldWrite)
+                {
+                    if (t.IsIdenticalToTemplate)
+                    {
+                        // Byte-identical to the template, so it IS our content — there
+                        // is no user authorship to protect, and a follow-up
+                        // modify_script (e.g. tuning moveSpeed) shouldn't be refused.
+                        SessionTracker.MarkScriptCreated(t.Path);
+                        reuseNotes.Add($"reused existing {t.Path} (already identical to the vetted template)");
+                    }
+                    else
+                    {
+                        // Deliberately NOT marked session-created: this is user-authored
+                        // code we chose not to clobber, so the overwrite guard must keep
+                        // protecting it from a later modify_script.
+                        reuseNotes.Add(
+                            $"reused existing {t.Path} — it DIFFERS from the vetted template, so it was " +
+                            "left untouched. If the player doesn't move or the camera doesn't follow, " +
+                            "that script is the reason; pass confirmExistingFileModification=true to " +
+                            "replace it with the vetted version.");
+                    }
+                    continue;
+                }
 
-            var createdScripts = new List<string>();
-            foreach (var (templatePath, scriptPath) in resolved)
-            {
-                string content = File.ReadAllText(templatePath);
-                File.WriteAllText(scriptPath, content);
+                string dir = Path.GetDirectoryName(t.Path).Replace('\\', '/');
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                File.WriteAllText(t.Path, File.ReadAllText(t.TemplatePath));
                 // Mark so a follow-up create_script / modify_script on this path is
                 // recognized as session-created and not refused by the guard.
-                SessionTracker.MarkScriptCreated(scriptPath);
-                createdScripts.Add(scriptPath);
+                SessionTracker.MarkScriptCreated(t.Path);
+                createdScripts.Add(t.Path);
+                if (t.Existed) reuseNotes.Add($"replaced {t.Path} with the vetted template (confirmed)");
             }
 
             // ── Assemble the scene around the scripts (the ATOMIC part) ───────
@@ -164,6 +187,8 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Scripts
             var extras = new Dictionary<string, object>
             {
                 { "createdScripts", createdScripts },
+                { "scriptPaths", scriptPaths },
+                { "reusedScripts", reuseNotes },
                 { "requiresCompilation", true },
                 { "playerObject", player.name },
                 { "cameraObject", camera.name },
@@ -185,17 +210,132 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Scripts
                     "so no object-reference wiring is needed."
                 },
             };
+            if (collisionWarnings.Count > 0)
+            {
+                extras["duplicateScriptWarnings"] = collisionWarnings;
+            }
+
+            // Lead with what the caller must ACT on. A reuse is normal and needs no
+            // action; a pre-existing duplicate is the one thing that will fail the
+            // compile no matter what this tool did, so it goes first when present.
+            string headline = collisionWarnings.Count > 0
+                ? "Set up the third-person player, but this project has DUPLICATE script files that " +
+                  "will fail to compile until you delete the extra copies: " +
+                  string.Join(" ", collisionWarnings) + " "
+                : $"Set up a complete, playable third-person controller (scripts: {string.Join(", ", scriptPaths)}). ";
 
             return ToolUtils.CreateSuccessResponse(
-                $"Created a complete, playable third-person controller in '{directory}'. " +
-                "This tool is ATOMIC — it wrote the two vetted scripts, ensured a Player capsule and a " +
-                "Main Camera exist, added CharacterController to the Player, and QUEUED ThirdPersonController + " +
-                "FollowCamera to attach automatically as soon as the scripts compile. " +
+                headline +
+                (reuseNotes.Count > 0 ? string.Join("; ", reuseNotes) + ". " : "") +
+                "This tool is ATOMIC — the two vetted scripts are in place, a Player capsule and a " +
+                "Main Camera exist, CharacterController is on the Player, and ThirdPersonController + " +
+                "FollowCamera are QUEUED to attach as soon as the scripts compile. " +
                 "DO NOT call add_component for these components — that happens for you on the next compile, " +
                 "and the scripts self-resolve their references so no object-reference wiring is needed. " +
+                "DO NOT write these scripts to another folder — Unity compiles all of Assets/ into one " +
+                "assembly, so a second copy of either class is a guaranteed compile error. " +
                 "Your ONLY remaining step is to call compile_scripts and wait until status='idle'; after that " +
                 "the player moves with WASD and jumps with Space, and the camera follows.",
                 extras);
+        }
+
+        // ── Target resolution (reuse-don't-refuse) ───────────────────────────
+
+        /// <summary>Where one template script will land, and why.</summary>
+        private sealed class ScriptTarget
+        {
+            public string ScriptName;
+            public string TemplatePath;
+            public string Path;                 // the ONE path in play for this script
+            public bool Existed;                // a file was already at Path
+            public bool ShouldWrite;            // false => reuse in place, write nothing
+            public bool IsIdenticalToTemplate;  // only meaningful when Existed
+            public List<string> DuplicatePaths = new List<string>();
+        }
+
+        /// <summary>
+        /// Decide the single path this script occupies, reusing whatever is already
+        /// in the project instead of writing a second copy.
+        ///
+        /// Why project-wide and not just <paramref name="directory"/>: the vetted
+        /// templates declare NO namespace, so every script under Assets/ lands in
+        /// Assembly-CSharp's global namespace. Two files named
+        /// ThirdPersonController.cs are therefore two definitions of the same type
+        /// (CS0101) no matter which folders they sit in — writing "somewhere else"
+        /// to avoid clobbering is not a safe fallback, it is a guaranteed compile
+        /// break. (This tool used to refuse an existing file and tell the caller to
+        /// "pass a different directory"; callers dutifully did, and the build broke
+        /// every time.)
+        ///
+        /// Policy: reuse an existing same-named script wherever it lives. Only
+        /// overwrite it when the caller explicitly confirms, and even then overwrite
+        /// THAT file in place rather than adding a copy. Write fresh into
+        /// <paramref name="directory"/> only when the project has no such script.
+        /// </summary>
+        private static ScriptTarget ResolveTarget(string templatePath, string scriptName,
+            string directory, bool confirmOverwrite)
+        {
+            var target = new ScriptTarget
+            {
+                ScriptName = scriptName,
+                TemplatePath = templatePath,
+                Path = $"{directory}/{scriptName}",
+            };
+
+            target.DuplicatePaths = Gameplay.GameplayScaffold.FindExistingScripts(scriptName);
+
+            // Prefer a copy already sitting at the requested path; otherwise adopt
+            // whichever one the project has, so we never add a second definition.
+            string existing = null;
+            foreach (string p in target.DuplicatePaths)
+            {
+                if (string.Equals(p, target.Path, StringComparison.OrdinalIgnoreCase))
+                {
+                    existing = p;
+                    break;
+                }
+            }
+            if (existing == null && target.DuplicatePaths.Count > 0)
+            {
+                existing = target.DuplicatePaths[0];
+            }
+
+            if (existing == null)
+            {
+                target.ShouldWrite = true; // nothing in the project — write it fresh
+                return target;
+            }
+
+            target.Path = existing;
+            target.Existed = true;
+            target.IsIdenticalToTemplate = FilesMatch(existing, templatePath);
+
+            // An existing file is overwritten ONLY on explicit confirmation. No
+            // session-created shortcut: this tool marks a reused byte-identical
+            // script as session-created (so a follow-up modify_script can tune it),
+            // and keying the overwrite on that flag meant "reuse it once, then the
+            // user edits it" silently became "safe to clobber" — the tool replaced
+            // hand-edited code and reported it as "(confirmed)" when nothing had
+            // been confirmed. Caught in live testing, 2026-08-04.
+            //
+            // Skipping the write when content already matches the template is not a
+            // policy call, just avoided churn: rewriting identical bytes dirties the
+            // asset and costs an extra domain reload for no change.
+            target.ShouldWrite = confirmOverwrite;
+
+            return target;
+        }
+
+        private static bool FilesMatch(string pathA, string pathB)
+        {
+            try
+            {
+                return File.ReadAllText(pathA) == File.ReadAllText(pathB);
+            }
+            catch
+            {
+                return false; // unreadable — treat as "differs" so we never claim a false match
+            }
         }
 
         // ── Scene-assembly helpers (built-in types only — safe to run now) ────

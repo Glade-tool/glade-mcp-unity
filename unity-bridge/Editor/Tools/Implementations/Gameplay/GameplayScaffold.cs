@@ -215,20 +215,42 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Gameplay
         /// <summary>Find any existing file named <paramref name="fileName"/> under
         /// Assets, independent of import state (a freshly-written .cs may not be in
         /// the AssetDatabase index yet). Returns an Assets-relative path or null.</summary>
-        private static string FindExistingScript(string fileName)
+        public static string FindExistingScript(string fileName)
         {
+            var hits = FindExistingScripts(fileName);
+            return hits.Count > 0 ? hits[0] : null;
+        }
+
+        /// <summary>
+        /// Every file named <paramref name="fileName"/> under Assets, as
+        /// Assets-relative paths (empty when there are none).
+        ///
+        /// Callers need the FULL list, not just the first hit, because the vetted
+        /// templates declare no namespace: every script under Assets/ compiles into
+        /// Assembly-CSharp, so two files named ThirdPersonController.cs are two
+        /// definitions of the same type (CS0101) regardless of which folders they
+        /// sit in. A scaffolder that can see all the copies can say so instead of
+        /// letting the user read 11 opaque compile errors.
+        /// </summary>
+        public static List<string> FindExistingScripts(string fileName)
+        {
+            var results = new List<string>();
             try
             {
                 string root = Application.dataPath.Replace('\\', '/'); // <project>/Assets
-                string[] hits = Directory.GetFiles(root, fileName, SearchOption.AllDirectories);
-                if (hits.Length == 0) return null;
-                string abs = hits[0].Replace('\\', '/');
-                return "Assets" + abs.Substring(root.Length);
+                foreach (string hit in Directory.GetFiles(root, fileName, SearchOption.AllDirectories))
+                {
+                    string abs = hit.Replace('\\', '/');
+                    results.Add("Assets" + abs.Substring(root.Length));
+                }
+                results.Sort(StringComparer.OrdinalIgnoreCase); // stable across OS enumeration order
             }
             catch
             {
-                return null;
+                // Unreadable project dir — treat as "no existing copies" and let the
+                // caller write fresh rather than hard-failing the whole scaffold.
             }
+            return results;
         }
     }
 }

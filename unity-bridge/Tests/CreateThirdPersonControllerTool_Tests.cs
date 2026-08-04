@@ -13,22 +13,29 @@ using GladeAgenticAI.Services;
 namespace GladeAgenticAI.Tests
 {
     /// Coverage for create_third_person_controller — the ATOMIC template tool.
-    /// It copies two Play-tested gameplay scripts (ThirdPersonController.cs +
-    /// FollowCamera.cs) into the project VERBATIM, AND assembles the scene around
+    /// It puts two Play-tested gameplay scripts (ThirdPersonController.cs +
+    /// FollowCamera.cs) in the project VERBATIM, AND assembles the scene around
     /// them so the caller never has to issue follow-up add_component calls.
     ///
     /// Contracts under test:
-    ///   1. Both scripts are written, content byte-identical to the bundled
+    ///   1. Both scripts end up in the project byte-identical to the bundled
     ///      templates (verbatim — the whole point of the tool).
-    ///   2. The session-aware overwrite guard mirrors create_script: a pre-existing
-    ///      file not created this session is refused, ATOMICALLY (no partial write,
-    ///      and — since the guard runs first — no scene objects created either).
-    ///   3. The confirm flag allows the overwrite.
+    ///   2. REUSE-DON'T-DUPLICATE: the templates declare no namespace, so every
+    ///      script under Assets/ shares one assembly and a second file named
+    ///      ThirdPersonController.cs is a duplicate type (CS0101). The tool must
+    ///      therefore never increase the number of copies of a class — including
+    ///      when the caller points `directory` somewhere else. A pre-existing
+    ///      script is reused in place and left byte-untouched.
+    ///   3. The confirm flag replaces the existing file IN PLACE (still no copy).
     ///   4. Written scripts are marked session-created.
     ///   5. ATOMIC scene assembly: a Player capsule (with CharacterController +
     ///      'Player' tag) and a Main Camera exist after the call, and the two
     ///      custom MonoBehaviours are QUEUED for post-compile attachment.
     ///   6. The caller's Player/Camera are reused, not duplicated, when present.
+    ///
+    /// Assertions are written against the *whole project*, not just TmpDir,
+    /// because the resolution these tests cover is itself project-wide (and the
+    /// dev project legitimately ships its own Assets/Scripts copies).
     public class CreateThirdPersonControllerTool_Tests
     {
         private const string TmpDir = "Assets/_TmpTpcTest";
@@ -37,6 +44,20 @@ namespace GladeAgenticAI.Tests
         private const string RealUserContent = "public class ThirdPersonController { int keep = 1; }\n";
 
         private HashSet<GameObject> _preExistingRoots;
+
+        /// Copies of a script name anywhere under Assets — the quantity that
+        /// decides whether the project compiles.
+        private static int CopiesOf(string fileName) =>
+            GladeAgenticAI.Core.Tools.Implementations.Gameplay.GameplayScaffold
+                .FindExistingScripts(fileName).Count;
+
+        private static string TemplateText(string templateFile) =>
+            File.ReadAllText(ToolUtils.ResolveTemplatePath(templateFile));
+
+        /// The single path the tool resolved for a script name (first copy).
+        private static string ResolvedPath(string fileName) =>
+            GladeAgenticAI.Core.Tools.Implementations.Gameplay.GameplayScaffold
+                .FindExistingScript(fileName);
 
         [SetUp]
         public void SetUp()
@@ -76,25 +97,31 @@ namespace GladeAgenticAI.Tests
         // ── Happy path + verbatim integrity ─────────────────────────────────
 
         [Test]
-        public void Create_NewDirectory_WritesBothScriptsVerbatim()
+        public void Create_PutsBothScriptsInProjectVerbatim_ExactlyOnce()
         {
+            int controllersBefore = CopiesOf("ThirdPersonController.cs");
+            int camerasBefore = CopiesOf("FollowCamera.cs");
+
             var tool = new CreateThirdPersonControllerScriptTool();
             string result = tool.Execute(new Dictionary<string, object>
             {
                 ["directory"] = TmpDir,
             });
 
-            StringAssert.Contains("third-person controller", result);
-            Assert.IsTrue(File.Exists(ControllerPath), "ThirdPersonController.cs should be written");
-            Assert.IsTrue(File.Exists(CameraPath), "FollowCamera.cs should be written");
+            StringAssert.Contains("third-person", result);
 
-            // Verbatim: written content must equal the bundled template exactly.
-            string controllerTemplate = ToolUtils.ResolveTemplatePath("ThirdPersonController.cs.txt");
-            string cameraTemplate = ToolUtils.ResolveTemplatePath("FollowCamera.cs.txt");
-            Assert.IsNotNull(controllerTemplate, "controller template must resolve");
-            Assert.IsNotNull(cameraTemplate, "camera template must resolve");
-            Assert.AreEqual(File.ReadAllText(controllerTemplate), File.ReadAllText(ControllerPath));
-            Assert.AreEqual(File.ReadAllText(cameraTemplate), File.ReadAllText(CameraPath));
+            // Each script is present, and present exactly once more than before
+            // only when the project had none (a fresh write). Never MORE.
+            Assert.AreEqual(System.Math.Max(controllersBefore, 1), CopiesOf("ThirdPersonController.cs"),
+                "the tool must not add a second ThirdPersonController.cs");
+            Assert.AreEqual(System.Math.Max(camerasBefore, 1), CopiesOf("FollowCamera.cs"),
+                "the tool must not add a second FollowCamera.cs");
+
+            // Verbatim: whatever path is in play holds the bundled template exactly.
+            Assert.AreEqual(TemplateText("ThirdPersonController.cs.txt"),
+                File.ReadAllText(ResolvedPath("ThirdPersonController.cs")));
+            Assert.AreEqual(TemplateText("FollowCamera.cs.txt"),
+                File.ReadAllText(ResolvedPath("FollowCamera.cs")));
         }
 
         [Test]
@@ -103,9 +130,11 @@ namespace GladeAgenticAI.Tests
             var tool = new CreateThirdPersonControllerScriptTool();
             tool.Execute(new Dictionary<string, object> { ["directory"] = TmpDir });
 
-            Assert.IsTrue(SessionTracker.WasScriptCreatedThisSession(ControllerPath),
+            // Assert against the path the tool actually resolved: with reuse, that
+            // may be a copy the project already had rather than one under TmpDir.
+            Assert.IsTrue(SessionTracker.WasScriptCreatedThisSession(ResolvedPath("ThirdPersonController.cs")),
                 "controller must be marked session-created so modify_script isn't refused");
-            Assert.IsTrue(SessionTracker.WasScriptCreatedThisSession(CameraPath),
+            Assert.IsTrue(SessionTracker.WasScriptCreatedThisSession(ResolvedPath("FollowCamera.cs")),
                 "camera follow must be marked session-created");
         }
 
@@ -166,38 +195,44 @@ namespace GladeAgenticAI.Tests
             Assert.AreEqual(1, groundCount, "must not add a second ground when one exists");
         }
 
-        // ── Overwrite guard (atomic — runs before any write OR scene change) ──
+        // ── Reuse-don't-duplicate (the CS0101 contract) ──────────────────────
 
         [Test]
-        public void Create_OverwritesExistingFileWithoutFlag_RefusedAtomically()
+        public void Create_ExistingUserScriptWithoutFlag_ReusedInPlace_NotClobbered()
         {
             // Pre-create ONE of the two targets as untracked "user code".
             File.WriteAllText(ControllerPath, RealUserContent);
             AssetDatabase.ImportAsset(ControllerPath);
+            int copiesBefore = CopiesOf("ThirdPersonController.cs");
 
             var tool = new CreateThirdPersonControllerScriptTool();
             string result = tool.Execute(new Dictionary<string, object> { ["directory"] = TmpDir });
 
-            StringAssert.Contains("Refused to overwrite", result);
-            StringAssert.Contains("preExistingScriptWithoutConfirmation", result);
-            // Untouched...
+            // Reused, not refused: the scaffold still completes...
+            StringAssert.DoesNotContain("Refused to overwrite", result);
+            StringAssert.Contains("DIFFERS from the vetted template", result);
+            // ...the user's code is byte-untouched...
             Assert.AreEqual(RealUserContent, File.ReadAllText(ControllerPath),
-                "refused call must not overwrite the existing file");
-            // ...and ATOMIC: the other script must not have been written either.
-            Assert.IsFalse(File.Exists(CameraPath),
-                "refusal must be atomic — no partial write of the second script");
-            // ...and the guard runs BEFORE scene assembly, so nothing was spawned.
-            Assert.IsNull(GameObject.Find("Player"),
-                "a refused call must not create scene objects");
-            Assert.IsFalse(PendingControllerWiring.HasPending,
-                "a refused call must not queue any wiring");
+                "an unconfirmed call must not overwrite user code");
+            // ...no second copy was added (that would be CS0101)...
+            Assert.AreEqual(copiesBefore, CopiesOf("ThirdPersonController.cs"),
+                "reuse must not add another copy of the class");
+            // ...and the scene assembly still ran, so the turn produces a usable player.
+            Assert.IsNotNull(GameObject.Find("Player"),
+                "reuse must still assemble the scene — that is the tool's atomic value");
+            Assert.IsTrue(PendingControllerWiring.HasPending,
+                "reuse must still queue the component wiring");
+            // The differing user script stays protected from a later modify_script.
+            Assert.IsFalse(SessionTracker.WasScriptCreatedThisSession(ControllerPath),
+                "a reused user-authored script must NOT be marked session-created");
         }
 
         [Test]
-        public void Create_OverwritesExistingFileWithFlag_Allowed()
+        public void Create_ExistingFileWithFlag_ReplacedInPlace_StillOneCopy()
         {
             File.WriteAllText(ControllerPath, RealUserContent);
             AssetDatabase.ImportAsset(ControllerPath);
+            int copiesBefore = CopiesOf("ThirdPersonController.cs");
 
             var tool = new CreateThirdPersonControllerScriptTool();
             string result = tool.Execute(new Dictionary<string, object>
@@ -206,11 +241,81 @@ namespace GladeAgenticAI.Tests
                 ["confirmExistingFileModification"] = true,
             });
 
-            StringAssert.Contains("third-person controller", result);
-            string controllerTemplate = ToolUtils.ResolveTemplatePath("ThirdPersonController.cs.txt");
-            Assert.AreEqual(File.ReadAllText(controllerTemplate), File.ReadAllText(ControllerPath),
+            StringAssert.Contains("third-person", result);
+            Assert.AreEqual(TemplateText("ThirdPersonController.cs.txt"), File.ReadAllText(ControllerPath),
                 "acknowledged call must overwrite with the vetted template");
-            Assert.IsTrue(File.Exists(CameraPath));
+            Assert.AreEqual(copiesBefore, CopiesOf("ThirdPersonController.cs"),
+                "a confirmed overwrite replaces in place — it must not add a copy");
+        }
+
+        /// REGRESSION (prod, 2026-08-03): the tool used to refuse a pre-existing
+        /// script and tell the caller to "pass a different 'directory'". The caller
+        /// obliged, a second ThirdPersonController.cs landed in Assets/Scripts/Player,
+        /// and the project failed to compile with 11 duplicate-definition errors.
+        /// Pointing `directory` elsewhere must never produce a second copy.
+        [Test]
+        public void Create_DifferentDirectory_WhenScriptExistsElsewhere_AddsNoSecondCopy()
+        {
+            // The script already lives somewhere in the project (as the vetted copy).
+            File.WriteAllText(ControllerPath, TemplateText("ThirdPersonController.cs.txt"));
+            File.WriteAllText(CameraPath, TemplateText("FollowCamera.cs.txt"));
+            AssetDatabase.ImportAsset(ControllerPath);
+            AssetDatabase.ImportAsset(CameraPath);
+
+            int controllersBefore = CopiesOf("ThirdPersonController.cs");
+            int camerasBefore = CopiesOf("FollowCamera.cs");
+
+            // Caller aims somewhere else entirely — the exact move that broke prod.
+            var tool = new CreateThirdPersonControllerScriptTool();
+            string result = tool.Execute(new Dictionary<string, object>
+            {
+                ["directory"] = TmpDir + "/Player",
+            });
+
+            Assert.AreEqual(controllersBefore, CopiesOf("ThirdPersonController.cs"),
+                "a different 'directory' must NOT create a duplicate ThirdPersonController.cs");
+            Assert.AreEqual(camerasBefore, CopiesOf("FollowCamera.cs"),
+                "a different 'directory' must NOT create a duplicate FollowCamera.cs");
+            Assert.IsFalse(File.Exists(TmpDir + "/Player/ThirdPersonController.cs"),
+                "nothing may be written into the alternate directory");
+            StringAssert.DoesNotContain("Refused", result);
+        }
+
+        [Test]
+        public void Create_ExistingIdenticalScript_ReusedAndMarkedSessionCreated()
+        {
+            // Identical to the template => it IS our content, so a follow-up
+            // modify_script (tuning moveSpeed) must not be refused.
+            File.WriteAllText(ControllerPath, TemplateText("ThirdPersonController.cs.txt"));
+            AssetDatabase.ImportAsset(ControllerPath);
+
+            var tool = new CreateThirdPersonControllerScriptTool();
+            string result = tool.Execute(new Dictionary<string, object> { ["directory"] = TmpDir });
+
+            StringAssert.Contains("identical to the vetted template", result);
+            Assert.IsTrue(SessionTracker.WasScriptCreatedThisSession(ControllerPath),
+                "a reused byte-identical script must be marked session-created");
+        }
+
+        [Test]
+        public void Create_PreExistingDuplicates_AreNamedInTheResult()
+        {
+            // Two copies already on disk — the state the old bug left projects in.
+            // The tool didn't cause it and can't safely delete user files, but it
+            // must say WHICH files collide instead of leaving the caller to guess
+            // from 11 opaque CS0101 lines.
+            Directory.CreateDirectory(TmpDir + "/Nested");
+            File.WriteAllText(ControllerPath, TemplateText("ThirdPersonController.cs.txt"));
+            File.WriteAllText(TmpDir + "/Nested/ThirdPersonController.cs",
+                TemplateText("ThirdPersonController.cs.txt"));
+            AssetDatabase.Refresh(ImportAssetOptions.Default);
+
+            var tool = new CreateThirdPersonControllerScriptTool();
+            string result = tool.Execute(new Dictionary<string, object> { ["directory"] = TmpDir });
+
+            StringAssert.Contains("DUPLICATE", result);
+            StringAssert.Contains("CS0101", result);
+            StringAssert.Contains("Nested/ThirdPersonController.cs", result);
         }
 
         [Test]
@@ -223,7 +328,7 @@ namespace GladeAgenticAI.Tests
             // Second call against the same dir should not need the flag — the agent
             // is regenerating its own scaffold, not clobbering user code.
             string result = tool.Execute(new Dictionary<string, object> { ["directory"] = TmpDir });
-            StringAssert.Contains("third-person controller", result);
+            StringAssert.Contains("third-person", result);
             StringAssert.DoesNotContain("Refused to overwrite", result);
         }
     }
