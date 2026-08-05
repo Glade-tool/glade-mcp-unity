@@ -137,17 +137,15 @@ async def run_case_direct(
 
     # Latency is RECORDED, not a pass/fail term.
     #
-    # It used to be one here, which is the policy the Proxy harness retired on
-    # evidence in 2026-07 (see the note above print_regression_diff in
-    # Assets/Editor/GladeAgenticAI/Proxy/eval/harness/reporter.py): a
-    # wide-margin +150% latency gate still fired on 11 of 37 cases in a run
-    # where every case passed, and re-running at lower concurrency moved the
-    # same deltas by 100 percentage points with no code change.
+    # It used to be a pass/fail term, and it was retired on evidence: a
+    # deliberately wide +150% gate still fired on 11 of 37 cases in a run where
+    # every case passed on correctness, and re-running the same commit at lower
+    # concurrency moved those deltas by 100 percentage points. The gate was
+    # measuring the CI runner, not the code.
     #
-    # The argument is even stronger here than there. This harness has no model
-    # in the loop at all — it dispatches tools directly against a mock HTTP
-    # bridge — so its wall-clock is almost entirely process startup and runner
-    # scheduling. A budget over that measures how busy the box was.
+    # That is especially true here, because this harness has no model in the
+    # loop — it dispatches tools directly against a mock HTTP bridge, so its
+    # wall-clock is almost entirely process startup and runner scheduling.
     #
     # latency_budget_exceeded is still computed and still reported, so a case
     # that suddenly takes 10x as long is visible to a human reading the run.

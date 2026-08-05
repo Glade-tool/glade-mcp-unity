@@ -230,12 +230,12 @@ Exit code 1 on any failure, compatible with standard CI gates.
 ### What this harness does NOT gate on
 
 **Latency.** `latency_budget_exceeded` is computed and reported but is not a
-pass/fail term. It used to be, which is the policy the Proxy harness retired on
-evidence in 2026-07: a wide-margin latency gate still fired on 11 of 37 cases in
-a run where every case passed, and re-running at lower concurrency moved the
-same deltas by 100 percentage points with no code change. The argument is
-stronger here — there is no model in the loop at all, so wall-clock is mostly
-process startup and runner scheduling.
+pass/fail term. It used to be, and it was retired on evidence: a deliberately
+wide latency gate still fired on 11 of 37 cases in a run where every case
+passed on correctness, and re-running the same commit at lower concurrency
+moved those deltas by 100 percentage points. The gate was measuring the CI
+runner, not the code. That is especially true here — there is no model in the
+loop at all, so wall-clock is mostly process startup and runner scheduling.
 
 ---
 
