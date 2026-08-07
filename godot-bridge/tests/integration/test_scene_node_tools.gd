@@ -547,6 +547,138 @@ func test_set_node_transform_invalid_space() -> void:
 	assert_false(r.success)
 
 
+# ── set_node_transform_batch ──────────────────────────────────────────────
+#
+# The batch delegates every entry to set_node_transform, so these tests pin the
+# BATCH's own contract — fan-out, partial failure, default inheritance, nested
+# key normalization — rather than re-testing the transform math above.
+
+func _spawn_3d(node_name: String) -> Node3D:
+	var n := Node3D.new()
+	n.name = node_name
+	_sandbox.add_child(n)
+	n.owner = EditorInterface.get_edited_scene_root()
+	return n
+
+
+func test_set_node_transform_batch_applies_every_entry() -> void:
+	var a := _spawn_3d("BatchA")
+	var b := _spawn_3d("BatchB")
+	var c := _spawn_3d("BatchC")
+	var r := _run("set_node_transform_batch", {"transforms": [
+		{"node_path": "%s/BatchA" % SANDBOX_NAME, "position": "1,0,0"},
+		{"node_path": "%s/BatchB" % SANDBOX_NAME, "position": "2,0,0", "rotation": "0,45,0"},
+		{"node_path": "%s/BatchC" % SANDBOX_NAME, "position": "3,0,0", "scale": "2,2,2"},
+	]})
+	assert_true(r.success)
+	assert_eq(r.count, 3)
+	assert_eq(a.position, Vector3(1, 0, 0))
+	assert_eq(b.position, Vector3(2, 0, 0))
+	assert_almost_eq(b.rotation_degrees.y, 45.0, 0.01)
+	assert_eq(c.scale, Vector3(2, 2, 2))
+	# previous_state per entry is what makes a per-node undo reconstructable.
+	assert_eq(r.updated.size(), 3)
+	assert_true(r.updated[0].has("previous_state"))
+
+
+func test_set_node_transform_batch_matches_sequential_singles() -> void:
+	# One batched call and N single calls must leave the scene in the same
+	# state — that equivalence is what makes batching a free win rather than a
+	# behaviour change the caller has to reason about.
+	var single := _spawn_3d("EquivSingle")
+	var batched := _spawn_3d("EquivBatch")
+	_run("set_node_transform", {
+		"node_path": "%s/EquivSingle" % SANDBOX_NAME,
+		"position": "4,5,6", "rotation": "0,90,0", "scale": "3,3,3",
+	})
+	_run("set_node_transform_batch", {"transforms": [
+		{"node_path": "%s/EquivBatch" % SANDBOX_NAME,
+		 "position": "4,5,6", "rotation": "0,90,0", "scale": "3,3,3"},
+	]})
+	assert_eq(single.position, batched.position)
+	assert_almost_eq(single.rotation_degrees.y, batched.rotation_degrees.y, 0.01)
+	assert_eq(single.scale, batched.scale)
+
+
+func test_set_node_transform_batch_reports_partial_failure() -> void:
+	# A batch that half-lands must say so. Reporting plain success would leave
+	# the agent believing nodes moved that never did — the same trust bug the
+	# single tool's no-op refusal exists to prevent.
+	var ok_node := _spawn_3d("BatchOK")
+	var r := _run("set_node_transform_batch", {"transforms": [
+		{"node_path": "%s/BatchOK" % SANDBOX_NAME, "position": "7,0,0"},
+		{"node_path": "%s/NoSuchNode" % SANDBOX_NAME, "position": "8,0,0"},
+	]})
+	assert_true(r.success, "a batch with one good entry still applied work")
+	assert_eq(r.count, 1)
+	assert_eq(ok_node.position, Vector3(7, 0, 0))
+	assert_eq(r.failed.size(), 1)
+	assert_eq(r.failed[0].node_path, "%s/NoSuchNode" % SANDBOX_NAME)
+	assert_string_contains(r.message, "1 failed")
+
+
+func test_set_node_transform_batch_all_entries_failing_is_an_error() -> void:
+	var r := _run("set_node_transform_batch", {"transforms": [
+		{"node_path": "%s/Ghost1" % SANDBOX_NAME, "position": "1,0,0"},
+		{"node_path": "%s/Ghost2" % SANDBOX_NAME, "position": "2,0,0"},
+	]})
+	assert_false(r.success, "a batch that moved nothing must not report success")
+	assert_true(r.has("possible_solutions"))
+
+
+func test_set_node_transform_batch_empty_is_refused_with_routing_hints() -> void:
+	var r := _run("set_node_transform_batch", {"transforms": []})
+	assert_false(r.success)
+	var hints_text: String = "\n".join(r.possible_solutions)
+	assert_string_contains(hints_text, "set_node_transform")
+	assert_string_contains(hints_text, "arrange_nodes")
+
+
+func test_set_node_transform_batch_missing_transforms_arg() -> void:
+	var r := _run("set_node_transform_batch", {})
+	assert_false(r.success)
+
+
+func test_set_node_transform_batch_entry_overrides_batch_wide_default() -> void:
+	var inherits := _spawn_3d("InheritsOp")
+	var overrides := _spawn_3d("OverridesOp")
+	inherits.position = Vector3(1, 0, 0)
+	overrides.position = Vector3(1, 0, 0)
+	var r := _run("set_node_transform_batch", {
+		"operation": "add",
+		"transforms": [
+			{"node_path": "%s/InheritsOp" % SANDBOX_NAME, "position": "2,0,0"},
+			{"node_path": "%s/OverridesOp" % SANDBOX_NAME, "position": "2,0,0", "operation": "set"},
+		],
+	})
+	assert_true(r.success)
+	assert_eq(inherits.position, Vector3(3, 0, 0), "batch-wide 'add' should apply")
+	assert_eq(overrides.position, Vector3(2, 0, 0), "entry's own 'set' must win")
+
+
+func test_set_node_transform_batch_normalizes_camel_case_entry_keys() -> void:
+	# ws_server normalizes only the TOP level of the payload, so entries carry
+	# their own normalization — otherwise a model writing nodePath gets a
+	# silent no-op instead of a moved node.
+	var n := _spawn_3d("CamelEntry")
+	var r := _run("set_node_transform_batch", {"transforms": [
+		{"nodePath": "%s/CamelEntry" % SANDBOX_NAME, "position": "9,0,0"},
+	]})
+	assert_true(r.success)
+	assert_eq(n.position, Vector3(9, 0, 0))
+
+
+func test_set_node_transform_batch_malformed_entry_does_not_crash() -> void:
+	var n := _spawn_3d("SurvivesJunk")
+	var r := _run("set_node_transform_batch", {"transforms": [
+		"not-an-object",
+		{"node_path": "%s/SurvivesJunk" % SANDBOX_NAME, "position": "5,0,0"},
+	]})
+	assert_true(r.success)
+	assert_eq(n.position, Vector3(5, 0, 0))
+	assert_eq(r.failed.size(), 1)
+
+
 # ── set_node_resource ──────────────────────────────────────────────────────
 
 # Saves a resource to a unique res:// path so the tool can load() it like a

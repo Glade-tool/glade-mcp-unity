@@ -26,8 +26,11 @@ const RenameNodeTool        = preload("res://addons/com.gladekit.mcp-bridge/tool
 const DuplicateNodeTool     = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/scene/duplicate_node.gd")
 const SetNodeParentTool     = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/scene/set_node_parent.gd")
 const SetNodeTransformTool  = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/scene/set_node_transform.gd")
+# Batch transform: arbitrary per-node position/rotation/scale in ONE call,
+# so placing N nodes costs one request instead of N.
+const SetNodeTransformBatchTool = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/scene/set_node_transform_batch.gd")
 # Layout primitive: position many nodes into a row/column/grid in one call
-# (the batch counterpart of set_node_transform for level building).
+# (the PATTERNED counterpart — one anchor + spacing, no per-node args).
 const ArrangeNodesTool      = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/scene/arrange_nodes.gd")
 # Layout: drop nodes onto the surface below them (raycast-down). Pairs with
 # arrange_nodes — lay out a grid, then seat each node on the terrain.
@@ -306,7 +309,7 @@ func register_alias(alias_name: String, canonical_name: String) -> void:
 
 
 func _register_all() -> void:
-	# Scene / Node (18)
+	# Scene / Node (22)
 	register_tool(GetSceneTreeTool.new())
 	register_tool(GetNodeInfoTool.new())
 	register_tool(FindNodesTool.new())
@@ -324,6 +327,7 @@ func _register_all() -> void:
 	register_tool(DuplicateNodeTool.new())
 	register_tool(SetNodeParentTool.new())
 	register_tool(SetNodeTransformTool.new())
+	register_tool(SetNodeTransformBatchTool.new())
 	register_tool(ArrangeNodesTool.new())
 	register_tool(SnapToGroundTool.new())
 	register_tool(SetNodeResourceTool.new())

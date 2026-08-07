@@ -4,6 +4,10 @@ All notable changes to `gladekit-mcp` are documented here. Format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **Godot bridge addon v0.7.11 — `set_node_transform_batch` (110 → 111 tools).** Moves, rotates or scales many nodes in one call, with per-node values. Godot previously had no arbitrary batch path: `arrange_nodes` covers regular row/column/grid layouts from a single anchor, but anything else — explicit positions, rotations, mixed changes — meant one `set_node_transform` call per node, and laying out a few dozen props that way is slow and expensive enough to dominate a request. `set_node_transform` now points at the batch variant for two or more nodes, and both tools share one implementation, so the single and batch paths cannot drift apart. Partial failures are reported per node rather than collapsed into one result.
+
 ## [0.7.22] - 2026-08-04
 
 ### Fixed

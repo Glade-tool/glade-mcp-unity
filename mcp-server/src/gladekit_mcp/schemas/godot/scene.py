@@ -702,9 +702,12 @@ TOOLS: List[Dict] = [
         "function": {
             "name": "set_node_transform",
             "description": (
-                "Set position, rotation (Euler degrees), and/or scale on a Node3D or "
+                "Set position, rotation (Euler degrees), and/or scale on ONE Node3D or "
                 "Node2D. Each component is independent — omit args to leave them unchanged. "
-                "Use operation='add' for relative moves, 'multiply' for relative scales."
+                "Use operation='add' for relative moves, 'multiply' for relative scales. "
+                "For TWO OR MORE nodes use set_node_transform_batch instead — one batch "
+                "call beats N sequential ones on both latency and cost; if you are about "
+                "to call set_node_transform a second time in the same turn, batch the rest."
             ),
             "parameters": {
                 "type": "object",
@@ -734,6 +737,60 @@ TOOLS: List[Dict] = [
                     },
                 },
                 "required": ["node_path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_node_transform_batch",
+            "description": (
+                "Move, rotate or scale MULTIPLE nodes in ONE call — always prefer this "
+                "over repeating set_node_transform when more than one node needs a "
+                "transform. THE tool for placing a set of things: positioning spawn "
+                "points, scattering props or trees, seating enemies around a level, "
+                "moving a group of platforms, spacing waypoints, rotating a batch of "
+                "signs, scaling several objects at once. Each entry takes the same args "
+                "as set_node_transform (node_path, position/rotation/scale as 'x,y,z', "
+                "space, operation set|add|multiply), so per-node values can all differ. "
+                "Placing nodes one at a time costs one request each, so a level "
+                "with a few dozen props burns tens of round-trips a single call "
+                "collapses — latency and tokens the user pays for either way. "
+                "Use arrange_nodes instead when "
+                "the layout is a regular row/column/grid off one anchor and spacing; use "
+                "this when the positions are explicit or per-node, or when rotation or "
+                "scale is involved."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "transforms": {
+                        "type": "array",
+                        "description": "One entry per node. Each needs node_path plus at least one of position/rotation/scale.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "node_path": {"type": "string"},
+                                "position": {"type": "string"},
+                                "rotation": {"type": "string"},
+                                "scale": {"type": "string"},
+                                "space": {"type": "string", "enum": ["local", "global"]},
+                                "operation": {"type": "string", "enum": ["set", "add", "multiply"]},
+                            },
+                        },
+                    },
+                    "space": {
+                        "type": "string",
+                        "description": "Batch-wide default coordinate space; an entry's own space wins. Default 'local'.",
+                        "enum": ["local", "global"],
+                    },
+                    "operation": {
+                        "type": "string",
+                        "description": "Batch-wide default op; an entry's own operation wins. Default 'set'.",
+                        "enum": ["set", "add", "multiply"],
+                    },
+                },
+                "required": ["transforms"],
             },
         },
     },
