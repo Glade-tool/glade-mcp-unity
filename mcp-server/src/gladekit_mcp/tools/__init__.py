@@ -26,6 +26,8 @@ from .animation import CATEGORY as ANIMATION_CATEGORY
 from .animation import TOOLS as ANIMATION_TOOLS
 from .asset_pipeline import CATEGORY as ASSET_PIPELINE_CATEGORY
 from .asset_pipeline import TOOLS as ASSET_PIPELINE_TOOLS
+from .build import CATEGORY as BUILD_CATEGORY
+from .build import TOOLS as BUILD_TOOLS
 from .camera import CATEGORY as CAMERA_CATEGORY
 from .camera import TOOLS as CAMERA_TOOLS
 from .core import CATEGORY as CORE_CATEGORY
@@ -85,6 +87,7 @@ ALL_CATEGORIES = [
     (UI_CATEGORY, UI_TOOLS),
     (INPUT_CATEGORY, INPUT_TOOLS),
     (TERRAIN_NAV_CATEGORY, TERRAIN_NAV_TOOLS),
+    (BUILD_CATEGORY, BUILD_TOOLS),
     (RUNTIME_CATEGORY, RUNTIME_TOOLS),
 ]
 if not _ASSET_PIPELINE_DISABLED:

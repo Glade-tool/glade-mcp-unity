@@ -87,7 +87,7 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Materials
         /// <summary>
         /// Resolve the model's propertyName against the shader's actual property list.
         /// Tries exact match, an underscore-prefixed variant, and a case-insensitive
-        /// walk of ShaderUtil.GetPropertyName(). Returns the canonical shader property
+        /// walk of Shader.GetPropertyName(). Returns the canonical shader property
         /// name, or null if no match.
         /// </summary>
         private static string ResolveShaderPropertyName(Material mat, string propertyName)
@@ -102,10 +102,14 @@ namespace GladeAgenticAI.Core.Tools.Implementations.Materials
 
             var shader = mat.shader;
             if (shader == null) return null;
-            int count = ShaderUtil.GetPropertyCount(shader);
+            // Shader.GetPropertyCount/GetPropertyName, not the ShaderUtil statics:
+            // those were deprecated (CS0618) and this file already used the modern
+            // API a few lines down in GetShaderPropertyType, so the two halves
+            // disagreed.
+            int count = shader.GetPropertyCount();
             for (int i = 0; i < count; i++)
             {
-                string name = ShaderUtil.GetPropertyName(shader, i);
+                string name = shader.GetPropertyName(i);
                 if (string.Equals(name, propertyName, StringComparison.OrdinalIgnoreCase))
                     return name;
                 // Compare ignoring any leading underscore on either side.

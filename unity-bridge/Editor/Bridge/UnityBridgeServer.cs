@@ -932,8 +932,13 @@ namespace GladeAgenticAI.Bridge
                     return;
                 }
 
+                // No batch-level requiresCompilation aggregate is tracked here on
+                // purpose: BatchExecuteResponse has no such field, and the client
+                // already derives it from the per-item flags
+                // (mcp-server bridge.py: `any(r.get("requiresCompilation") ...)`).
+                // A server-side copy would be a second source of truth for the
+                // same fact — it existed as a write-only local and was removed.
                 var results = new BatchToolResult[request.calls.Length];
-                bool anyRequiresCompilation = false;
 
                 for (int i = 0; i < request.calls.Length; i++)
                 {
@@ -961,8 +966,6 @@ namespace GladeAgenticAI.Bridge
                         toolResult.success = true;
                         toolResult.result = result;
                         toolResult.requiresCompilation = ToolRequiresCompilation(call.toolName);
-                        if (toolResult.requiresCompilation)
-                            anyRequiresCompilation = true;
                     }
                     catch (Exception e)
                     {
