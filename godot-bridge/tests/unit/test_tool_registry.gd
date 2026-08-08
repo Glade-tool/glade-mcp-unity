@@ -65,7 +65,10 @@ func test_registry_contains_all_mvp_tools() -> void:
 	# (create_camera_3d → create_camera was a rename, not an add; it stays callable
 	# via a registry alias which does NOT count toward get_tool_count.)
 	# set_node_transform_batch (1) = 111.
-	assert_eq(registry.get_tool_count(), 111, "Catalog should register exactly 111 tools")
+	# Build/export — get_export_info + create_export_preset + export_project
+	# (3) = 114. Confirmed by a real engine boot reporting
+	# "v0.7.12, 114 tools registered".
+	assert_eq(registry.get_tool_count(), 114, "Catalog should register exactly 114 tools")
 
 	# Critical names that must be present for the schema-mock layer to wire
 	# up correctly. Failing here means a registration line went missing.

@@ -53,3 +53,21 @@ func execute(_args: Dictionary) -> Dictionary:
 # so this base implementation (always-empty) is safe to inherit untouched.
 func poll() -> Dictionary:
 	return {}
+
+
+# Per-tool override for the bridge's async hard ceiling, in milliseconds.
+# 0 (the default) means "use the bridge's ASYNC_DISPATCH_TIMEOUT_MSEC", which
+# is sized for asset downloads. A tool whose work is legitimately longer —
+# export_project builds can run minutes on a large project — sets this in
+# execute() so the bridge does not abandon it mid-job. Set it from a
+# caller-supplied bound rather than hardcoding something unbounded: the point
+# is a HONEST ceiling, not the absence of one.
+var async_timeout_msec: int = 0
+
+
+# Called by the bridge when it gives up on an async dispatch (the tool blew
+# its ceiling). Gives the tool a chance to release resources it owns —
+# principally to kill a subprocess so a timed-out job does not leave an orphan
+# running. Default no-op: a tool with nothing to clean up inherits it safely.
+func cancel() -> void:
+	pass

@@ -344,12 +344,24 @@ func _drain_async_dispatches() -> void:
 		var tool_name: String = str(entry["tool_name"])
 		var result = tool.poll()
 		if result == null or not (result is Dictionary) or (result as Dictionary).is_empty():
-			# Still running — unless it has blown the hard ceiling.
-			if now - int(entry["started_msec"]) > ASYNC_DISPATCH_TIMEOUT_MSEC:
+			# Still running — unless it has blown the hard ceiling. A tool may
+			# raise its own ceiling via `async_timeout_msec` (export_project
+			# does; a large build legitimately outlives the download-sized
+			# default and abandoning it mid-build orphans a headless process).
+			var ceiling: int = ASYNC_DISPATCH_TIMEOUT_MSEC
+			var tool_ceiling: int = int(tool.get("async_timeout_msec"))
+			if tool_ceiling > 0:
+				ceiling = tool_ceiling
+			if now - int(entry["started_msec"]) > ceiling:
 				var to_msg := (
 					"Async tool '%s' did not finish within %ds and was abandoned. "
-					+ "The download may have stalled; retry, and check your network."
-				) % [tool_name, ASYNC_DISPATCH_TIMEOUT_MSEC / 1000]
+					+ "Retry; if it keeps timing out, run the equivalent step from the "
+					+ "Godot editor to see the engine's own progress."
+				) % [tool_name, ceiling / 1000]
+				# Let the tool release what it owns (e.g. kill a subprocess) so
+				# an abandoned dispatch does not leak a running process.
+				if tool.has_method("cancel"):
+					tool.cancel()
 				ErrorTracker.record(tool_name, to_msg, {})
 				_enqueue_send(entry["peer"], _make_error(str(entry["request_id"]), to_msg))
 			else:

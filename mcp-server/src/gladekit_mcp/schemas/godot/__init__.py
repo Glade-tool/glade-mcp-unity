@@ -51,6 +51,7 @@ from .animation import TOOLS as ANIMATION_TOOLS
 from .asset_pipeline import TOOLS as ASSET_PIPELINE_TOOLS
 from .audio import TOOLS as AUDIO_TOOLS
 from .camera import TOOLS as CAMERA_TOOLS
+from .export import TOOLS as EXPORT_TOOLS
 from .navigation import TOOLS as NAVIGATION_TOOLS
 from .particles import TOOLS as PARTICLES_TOOLS
 from .physics import TOOLS as PHYSICS_TOOLS
@@ -81,6 +82,7 @@ ALL_CATEGORIES = [
     ("asset_pipeline", ASSET_PIPELINE_TOOLS),
     ("audio", AUDIO_TOOLS),
     ("navigation", NAVIGATION_TOOLS),
+    ("export", EXPORT_TOOLS),
 ]
 
 
@@ -139,6 +141,8 @@ GODOT_READ_ONLY_TOOLS: frozenset = frozenset(
         "get_animation_tree_info",
         # Asset pipeline audit (v0.7.0) — reads .gladekit-asset.json sidecars only
         "list_imported_assets",
+        # Export recon (v0.7.12) — reads only; its two siblings write.
+        "get_export_info",
     }
 )
 

@@ -275,6 +275,13 @@ const SetAudioPlayerPropertiesTool = preload("res://addons/com.gladekit.mcp-brid
 const BakeNavigationMeshTool = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/navigation/bake_navigation_mesh.gd")
 const AddNavigationAgentTool = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/navigation/add_navigation_agent.gd")
 
+# ── Build / export (3, v0.7.12) ────────────────────────────────────────────
+# Shipping the game: the terminal step of every project, and previously the
+# one thing the whole catalog could not do. Recon -> configure -> build.
+const GetExportInfoTool      = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/export/get_export_info.gd")
+const CreateExportPresetTool = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/export/create_export_preset.gd")
+const ExportProjectTool      = preload("res://addons/com.gladekit.mcp-bridge/tools/implementations/export/export_project.gd")
+
 var _tools: Dictionary = {}
 
 # Backward-compat name → tool instance. Aliases keep an OLD tool name dispatching
@@ -448,6 +455,11 @@ func _register_all() -> void:
 	# add a NavigationAgent3D to a body. The substrate for navmesh enemy AI.
 	register_tool(BakeNavigationMeshTool.new())
 	register_tool(AddNavigationAgentTool.new())
+	# Build / export (3) — get_export_info (recon) -> create_export_preset
+	# (configure) -> export_project (build the distributable artifact).
+	register_tool(GetExportInfoTool.new())
+	register_tool(CreateExportPresetTool.new())
+	register_tool(ExportProjectTool.new())
 
 
 func register_tool(tool_instance) -> void:

@@ -66,6 +66,11 @@ const READ_ONLY_TOOLS: Array[String] = [
 	"get_animation_tree_info",
 	# Asset pipeline audit (v0.7.0) — reads .gladekit-asset.json sidecars only
 	"list_imported_assets",
+	# Export recon (v0.7.12) — reads export_presets.cfg + the template dir and
+	# writes nothing. Its siblings create_export_preset (writes the presets
+	# file) and export_project (writes build artifacts, spawns a process) are
+	# deliberately NOT here.
+	"get_export_info",
 ]
 
 const SETTING_KEY := "gladekit/read_only_mode"
