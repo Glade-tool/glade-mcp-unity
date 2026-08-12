@@ -4,9 +4,23 @@ All notable changes to `gladekit-mcp` are documented here. Format follows [Keep 
 
 ## [Unreleased]
 
+## [0.7.23] - 2026-08-11
+
 ### Added
 
+- **Unity can ship a game — `get_build_info`, `set_build_scenes`, `build_player`, `get_build_status` (271 → 275 tools).** Godot could produce a distributable build; Unity could not, so the last step of every project fell outside the tool set. Unity forces one structural difference from the Godot export path: `BuildPipeline.BuildPlayer` is synchronous, runs on the editor main thread, has no async variant, and cannot be pushed into a subprocess because Unity refuses to open a project in a second instance. The editor is frozen for the whole build, so a blocking call would outlive the MCP client's ~30s timeout on any real project — the client gives up, the build still finishes, and nothing can report the outcome. `build_player` therefore validates, schedules on the next editor tick, and answers immediately; `get_build_status` reports the result afterwards from `SessionState`, which survives the domain reload a target-platform recompile triggers.
+
 - **Godot bridge addon v0.7.11 — `set_node_transform_batch` (110 → 111 tools).** Moves, rotates or scales many nodes in one call, with per-node values. Godot previously had no arbitrary batch path: `arrange_nodes` covers regular row/column/grid layouts from a single anchor, but anything else — explicit positions, rotations, mixed changes — meant one `set_node_transform` call per node, and laying out a few dozen props that way is slow and expensive enough to dominate a request. `set_node_transform` now points at the batch variant for two or more nodes, and both tools share one implementation, so the single and batch paths cannot drift apart. Partial failures are reported per node rather than collapsed into one result.
+
+### Fixed
+
+- **A scene deleted from disk no longer costs a failed build to discover.** Unity's Build Settings keeps pointing at scenes after they are deleted, and `BuildPlayer`'s error blames the path *format* — "is an incorrect path for a scene file … expects paths relative to the project folder" — when the path is well-formed and the file is simply gone. An agent reading that will rewrite an already-correct path repeatedly. `get_build_info` now reports missing scenes as a blocker and `build_player` catches them pre-flight, replacing an 11-second failed build with an accurate sentence.
+
+- **A build interrupted by a domain reload no longer strands every later build.** The scheduled build callback does not survive a reload but the `SessionState` flag does, so `get_build_status` reported a phantom build still running and every subsequent `build_player` refused to start with "already in progress". An `[InitializeOnLoadMethod]` now reconciles the stranded state to failed/Interrupted on load.
+
+- **`build_player` refuses an `outputPath` inside `Assets/`**, which would make Unity import the entire built player back into the project as assets.
+
+- Cleared three compiler warnings in the bridge's own code — two obsolete `ShaderUtil` statics in `SetMaterialPropertyTool` (the same file already used the modern `Shader.GetPropertyCount` / `GetPropertyName` a few lines below, so the two halves disagreed) and a write-only local in `UnityBridgeServer`.
 
 ## [0.7.22] - 2026-08-04
 
