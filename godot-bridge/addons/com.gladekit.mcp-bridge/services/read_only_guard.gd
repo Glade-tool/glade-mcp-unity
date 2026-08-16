@@ -71,6 +71,11 @@ const READ_ONLY_TOOLS: Array[String] = [
 	# file) and export_project (writes build artifacts, spawns a process) are
 	# deliberately NOT here.
 	"get_export_info",
+	# Session mutation log read (v0.7.13) — reports what changed this session,
+	# mutates nothing. Also consulted by SessionTracker.record_dispatch to keep
+	# read tools OUT of the mutation timeline, so this list stays the single
+	# read classification on the bridge.
+	"get_session_summary",
 ]
 
 const SETTING_KEY := "gladekit/read_only_mode"

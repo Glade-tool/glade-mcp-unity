@@ -363,6 +363,7 @@ func _drain_async_dispatches() -> void:
 				if tool.has_method("cancel"):
 					tool.cancel()
 				ErrorTracker.record(tool_name, to_msg, {})
+				SessionTracker.record_dispatch(tool_name, {}, {"success": false, "error": to_msg})
 				_enqueue_send(entry["peer"], _make_error(str(entry["request_id"]), to_msg))
 			else:
 				still_pending.append(entry)
@@ -373,6 +374,10 @@ func _drain_async_dispatches() -> void:
 			final = _make_error(str(entry["request_id"]), "Async tool '%s' returned a result missing 'success'" % tool_name)
 		if not bool(final.get("success", false)):
 			ErrorTracker.record(tool_name, str(final.get("error", final.get("message", "async tool failed"))), {})
+		# Async twin of the sync-path record in _main_dispatch_tool — the
+		# original args are not retained in the pending entry, so target
+		# extraction leans on the result's own path fields.
+		SessionTracker.record_dispatch(tool_name, {}, final)
 		var response: Dictionary = {"id": entry["request_id"]}
 		for key in final:
 			response[key] = final[key]
@@ -478,16 +483,19 @@ func _main_dispatch_tool(request_id: String, request: Dictionary, peer: WebSocke
 		) % tool_name
 		push_error("[GladeKit MCP Bridge] " + crash_msg)
 		ErrorTracker.record(tool_name, crash_msg, args)
+		SessionTracker.record_dispatch(tool_name, args, {"success": false, "error": crash_msg})
 		return _make_error(request_id, crash_msg)
 	if not (result is Dictionary):
 		var bad_msg := "Tool '%s' returned %s; expected Dictionary" % [tool_name, typeof(result)]
 		push_error("[GladeKit MCP Bridge] " + bad_msg)
 		ErrorTracker.record(tool_name, bad_msg, args)
+		SessionTracker.record_dispatch(tool_name, args, {"success": false, "error": bad_msg})
 		return _make_error(request_id, bad_msg)
 	if not (result as Dictionary).has("success"):
 		var shape_msg := "Tool '%s' returned a Dictionary missing the required 'success' field" % tool_name
 		push_error("[GladeKit MCP Bridge] " + shape_msg)
 		ErrorTracker.record(tool_name, shape_msg, args)
+		SessionTracker.record_dispatch(tool_name, args, {"success": false, "error": shape_msg})
 		return _make_error(request_id, shape_msg)
 
 	# Attach the SCRIPTS this call freshly wrote (drained from the per-call
@@ -548,6 +556,13 @@ func _main_dispatch_tool(request_id: String, request: Dictionary, peer: WebSocke
 	if result.has("success") and not bool(result["success"]):
 		var err_msg: String = str(result.get("error", result.get("message", "tool failed")))
 		ErrorTracker.record(tool_name, err_msg, args)
+
+	# Session mutation log (get_session_summary). Placed AFTER the async
+	# early-return so the async_pending marker is never recorded as a final
+	# result — async dispatches are recorded when poll() finishes, in
+	# _drain_async_dispatches.
+	SessionTracker.record_dispatch(tool_name, args, result as Dictionary)
+
 	var response: Dictionary = {"id": request_id}
 	for key in result:
 		response[key] = result[key]

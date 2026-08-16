@@ -68,7 +68,8 @@ func test_registry_contains_all_mvp_tools() -> void:
 	# Build/export — get_export_info + create_export_preset + export_project
 	# (3) = 114. Confirmed by a real engine boot reporting
 	# "v0.7.12, 114 tools registered".
-	assert_eq(registry.get_tool_count(), 114, "Catalog should register exactly 114 tools")
+	# get_session_summary (1, v0.7.13) = 115.
+	assert_eq(registry.get_tool_count(), 115, "Catalog should register exactly 115 tools")
 
 	# Critical names that must be present for the schema-mock layer to wire
 	# up correctly. Failing here means a registration line went missing.

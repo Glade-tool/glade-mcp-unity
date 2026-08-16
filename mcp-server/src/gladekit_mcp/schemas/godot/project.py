@@ -1,5 +1,5 @@
 """
-Godot project tools (3): introspection + input map setup.
+Godot project tools (4): introspection + input map setup + session recap.
 
 `get_project_info` answers "what is this Godot project?" in a single
 call — name, version, renderer, main scene, currently edited scene,
@@ -11,10 +11,12 @@ makes when dropped into an unknown project. Consolidates the kind of
 discovery that competitor MCP servers expose as separate
 list-scenes / list-scripts / get-project-version tools.
 
-`list_assets` enumerates referenceable media; both are read-only and safe
-in play mode. `add_input_action` is the one mutating tool here — it defines
-custom InputMap actions (WASD, jump, etc.) so action-based input scripts
-have actions to reference.
+`list_assets` enumerates referenceable media. `get_session_summary` is the
+Godot twin of the Unity tool of the same name — the bridge's own mutation
+log, grouped by category, for "what did you just do?" questions. All three
+are read-only and safe in play mode. `add_input_action` is the one mutating
+tool here — it defines custom InputMap actions (WASD, jump, etc.) so
+action-based input scripts have actions to reference.
 """
 
 from typing import Dict, List
@@ -112,6 +114,31 @@ TOOLS: List[Dict] = [
                     "include_addons": {
                         "type": "boolean",
                         "description": ("Include assets under res://addons/. Default false."),
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_session_summary",
+            "description": (
+                "List every mutation made this Godot editor session, grouped "
+                "by category (nodes, scripts, scenes, materials, ui, physics, "
+                "animation, …) with a recent-first timeline. Use to answer "
+                "'what did you just do', 'what changed', 'summarize / recap "
+                "the changes', or to re-orient after a long session — without "
+                "re-reading scene state tool by tool. Counts every tool call; "
+                "the timeline records mutations only (reads are excluded). "
+                "Read-only; safe to call in play mode."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "max_timeline_entries": {
+                        "type": "integer",
+                        "description": ("Max recent mutation entries to include. Default 50, max 500."),
                     },
                 },
             },

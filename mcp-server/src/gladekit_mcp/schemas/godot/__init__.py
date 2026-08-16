@@ -24,14 +24,15 @@ Categories follow the Godot bridge's own directory layout under
                 + structured runtime-event observation          (10 tools)
     uid       — Godot 4.4+ ResourceUID handling                 ( 2 tools)
     signal    — Persistent (scene-saved) signal wiring          ( 3 tools)
-    project   — Introspection + asset listing + input actions   ( 3 tools)
+    project   — Introspection + asset listing + input actions
+                + session mutation-log recap                    ( 4 tools)
     ui        — Control-tree creation + anchor / text helpers   ( 6 tools)
     animation — AnimationPlayer + AnimationTree state machines  ( 9 tools)
     asset_pipeline — find / import / audit external CC0 assets   ( 3 tools)
     audio     — AudioStreamPlayer (2D/3D) create + mutate        ( 2 tools)
     navigation — 3D navmesh bake + NavigationAgent3D             ( 2 tools)
                                                                 ───────
-                                                                80 tools
+                                                                81 tools
 
 (Per-category counts are indicative; the authoritative catalog size is
 asserted against the bridge registry by the parity test in
@@ -143,6 +144,9 @@ GODOT_READ_ONLY_TOOLS: frozenset = frozenset(
         "list_imported_assets",
         # Export recon (v0.7.12) — reads only; its two siblings write.
         "get_export_info",
+        # Session mutation log read (v0.7.13) — mirrors the bridge guard,
+        # which is authoritative (see proxy/tests/test_read_only_parity.py).
+        "get_session_summary",
     }
 )
 
