@@ -157,7 +157,8 @@ jobs:
   # Replaces the manual `gh release create godot-v...` step that every Godot
   # bump required before. Triggered by godot-v* tags pushed by the private
   # repo's sync-oss workflow. No PyPI publish, no unity-bridge bump — the
-  # Godot bridge ships only as an addon zip + a UPM-style git URL.
+  # Godot bridge ships only as an addon zip (plus copying the addon folder
+  # from a tagged checkout).
   github-release-godot:
     name: Create GitHub Release (Godot)
     runs-on: ubuntu-latest
@@ -214,20 +215,25 @@ jobs:
         with:
           name: "Godot bridge v${{ steps.version.outputs.VERSION }}"
           files: /tmp/com.gladekit.mcp-bridge.zip
+          # The Godot editor has no git-URL package install (that is a Unity
+          # UPM feature), so the body must not advertise a `?path=...#tag` URL.
+          # Install is the zip below, or copying the addon folder from a
+          # checkout pinned to this tag.
           body: |
             ## Installation
 
-            **Recommended: UPM-style git URL** (pinned to this release):
-            ```
-            https://github.com/Glade-tool/glade-mcp.git?path=godot-bridge/addons/com.gladekit.mcp-bridge#godot-v${{ steps.version.outputs.VERSION }}
-            ```
+            Requires Godot **4.3+** (GDScript projects; the addon is editor-only and never ships in exported games).
 
-            **Manual install:**
-
-            1. Download `com.gladekit.mcp-bridge.zip` below.
+            1. Download `com.gladekit.mcp-bridge.zip` below (the asset under **Assets**, not "Source code").
             2. Extract it. The result is a single `com.gladekit.mcp-bridge/` folder.
             3. Move that folder into your project's `addons/` directory so the final path is `res://addons/com.gladekit.mcp-bridge/plugin.cfg`.
             4. In Godot: *Project → Project Settings → Plugins* → toggle **GladeKit MCP Bridge** on.
 
-            See the [README](README.md) for MCP client configuration.
+            **From source** (pinned to this release):
+            ```bash
+            git clone --depth 1 --branch godot-v${{ steps.version.outputs.VERSION }} https://github.com/Glade-tool/glade-mcp.git
+            cp -r glade-mcp/godot-bridge/addons/com.gladekit.mcp-bridge <your-project>/addons/
+            ```
+
+            See the [README](https://github.com/Glade-tool/glade-mcp#readme) for MCP client configuration.
           generate_release_notes: true
