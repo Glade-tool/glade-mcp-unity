@@ -244,7 +244,6 @@ Add to `.vscode/mcp.json` in your workspace:
 | Tests                | 269 pytest + 37-case eval on 3 MCP SDK versions, schema↔bridge parity guards, Unity NUnit + Godot GUT suites                             | Unity CI matrix + NL suite                    | None                                                     |
 | License              | MIT                                                                                                                                     | MIT                                           | MIT                                                      |
 
-Verified against the unity-mcp v10.1.2 and godot-mcp 0.1.1 sources on 2026-08-29. godot-mcp is the most-starred Godot server; the closest *active* in-editor alternative, [godot-ai](https://github.com/hi-godot/godot-ai) (46 tools), has screenshots and batch execution but no scaffolders, refactoring, asset pipeline, export, or memory.
 
 All core features are **free and local**. The cloud intelligence layer is optional and requires a `GLADEKIT_API_KEY`.
 
