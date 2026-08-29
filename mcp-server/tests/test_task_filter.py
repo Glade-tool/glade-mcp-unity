@@ -5,7 +5,11 @@ from __future__ import annotations
 import pytest
 
 from gladekit_mcp.tools.task_filter import (
+    GODOT_ALWAYS_INCLUDED,
     categorize_message,
+    categorize_message_godot,
+    get_godot_tool_schemas,
+    get_godot_tools_for_categories,
     get_relevant_tool_summary,
     get_tools_for_request,
 )
@@ -101,3 +105,70 @@ class TestGetRelevantToolSummary:
     def test_unmatched_summary_says_all(self):
         summary = get_relevant_tool_summary("xyzzy foobar")
         assert "all" in summary.lower() or "All" in summary
+
+
+# ── Godot ────────────────────────────────────────────────────────────────────
+
+
+class TestGodotCategorize:
+    """Godot keyword → category mapping (categories mirror schemas/godot)."""
+
+    @pytest.mark.parametrize(
+        "message, expected_category",
+        [
+            ("connect the timeout signal to the player", "signal"),
+            ("export the game for web", "export"),
+            ("build the project for windows", "export"),
+            ("add an explosion particle effect", "particles"),
+            ("play background music", "audio"),
+            ("bake a navigation mesh for the enemy", "navigation"),
+            ("raycast from the camera to the ground", "physics"),
+            ("set collision layers so coins ignore walls", "physics"),
+            ("add a point light and some fog", "camera"),
+            ("create a main menu with a start button", "ui"),
+            ("add an input action for jump", "project"),
+            ("what did you change this session", "project"),
+            ("set up an animation tree state machine", "animation"),
+            ("import a free kenney asset pack", "asset_pipeline"),
+            ("regenerate the uid files", "uid"),
+            ("run the project and check for errors", "runtime"),
+            ("change the material color to red", "resource"),
+        ],
+    )
+    def test_keyword_maps_to_category(self, message, expected_category):
+        assert expected_category in categorize_message_godot(message)
+
+    def test_empty_message_fails_open(self):
+        assert categorize_message_godot("") == set()
+        assert categorize_message_godot("xyzzy") == set()
+
+    def test_building_a_level_is_not_an_export(self):
+        assert "export" not in categorize_message_godot("build a platformer level with three platforms")
+
+    def test_every_keyword_category_exists_in_the_godot_catalog(self):
+        from gladekit_mcp.schemas.godot import ALL_CATEGORIES
+        from gladekit_mcp.tools.task_filter import _GODOT_CATEGORY_KEYWORDS
+
+        catalog = {name for name, _ in ALL_CATEGORIES}
+        assert set(_GODOT_CATEGORY_KEYWORDS) <= catalog
+        assert GODOT_ALWAYS_INCLUDED <= catalog
+
+
+class TestGodotSummary:
+    def test_matched_summary_lists_godot_tools_only(self):
+        text = get_relevant_tool_summary("connect the timeout signal", engine="godot")
+        assert text.startswith("Categories: ")
+        assert "signal" in text.split("\n")[0]
+        assert "connect_signal" in text
+        assert "get_scene_tree" in text  # always-included scene category
+        assert "add_component" not in text
+
+    def test_unmatched_summary_counts_the_whole_godot_catalog(self):
+        text = get_relevant_tool_summary("xyzzy", engine="godot")
+        assert text.startswith(f"All {len(get_godot_tool_schemas())} tools")
+
+    def test_categories_expand_to_tools(self):
+        tools = get_godot_tools_for_categories({"export"})
+        names = {t["function"]["name"] for t in tools}
+        assert {"export_project", "create_export_preset", "get_scene_tree", "create_script"} <= names
+        assert "connect_signal" not in names

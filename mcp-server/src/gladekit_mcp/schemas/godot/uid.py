@@ -7,7 +7,7 @@ on Godot 4.3 these tools return a structured "requires Godot 4.4+" error
 rather than executing — call them anyway, the agent will see the
 explanatory error and pivot.
 
-Code adapted from Coding-Solo/godot-mcp (MIT, see godot-bridge/NOTICE).
+Code adapted from Coding-Solo/godot-mcp (MIT, see addons/com.gladekit.mcp-bridge/NOTICE).
 """
 
 from typing import Dict, List

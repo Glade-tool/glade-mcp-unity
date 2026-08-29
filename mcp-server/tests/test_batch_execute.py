@@ -177,3 +177,60 @@ class TestBatchExecute:
             await call_tool("batch_execute", {"calls": [{"toolName": "get_scene_hierarchy"}]})
 
         assert captured_calls[0]["arguments"] == {}
+
+
+# ── Godot ────────────────────────────────────────────────────────────────────
+
+
+class TestBatchExecuteGodot:
+    @pytest.mark.asyncio
+    async def test_dispatches_each_call_over_the_ws_bridge(self, pin_engine_to_godot):
+        """Godot has no batch endpoint: calls go one by one through the WS
+        bridge with native JSON args, and a failure does not abort the batch."""
+        seen: list[tuple[str, dict]] = []
+
+        async def _godot_execute(tool_name, arguments, **kwargs):
+            seen.append((tool_name, arguments))
+            if tool_name == "set_node_transform":
+                return json.dumps({"success": False, "message": "Node 'Missing' not found"})
+            return json.dumps({"success": True, "message": f"{tool_name} ok", "node_path": "Foo"})
+
+        unity_batch = AsyncMock(side_effect=AssertionError("Unity /api/batch must not be used on Godot"))
+        with (
+            patch("gladekit_mcp.bridge.godot_execute_tool", new=_godot_execute),
+            patch("gladekit_mcp.bridge.execute_batch", new=unity_batch),
+        ):
+            result = await call_tool(
+                "batch_execute",
+                {
+                    "calls": [
+                        {"toolName": "create_node", "arguments": {"name": "Foo", "type": "Node3D"}},
+                        {
+                            "toolName": "set_node_transform",
+                            "arguments": {"node_path": "Missing", "position": [1, 2.5, 3]},
+                        },
+                        {"toolName": "get_scene_tree"},
+                    ]
+                },
+            )
+
+        text = result[0].text
+        assert "Batch executed 3 tool(s)" in text
+        assert "[1] create_node: OK" in text
+        assert "[2] set_node_transform: FAILED — Node 'Missing' not found" in text
+        assert "[3] get_scene_tree: OK" in text
+
+        assert [name for name, _ in seen] == ["create_node", "set_node_transform", "get_scene_tree"]
+        # Native types survive: no Unity-style number→string coercion.
+        assert seen[1][1]["position"] == [1, 2.5, 3]
+        assert seen[2][1] == {}
+        unity_batch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool_is_reported_per_call(self, pin_engine_to_godot):
+        with patch("gladekit_mcp.bridge.godot_execute_tool", new=AsyncMock(return_value=json.dumps({"success": True}))):
+            result = await call_tool(
+                "batch_execute",
+                {"calls": [{"toolName": "create_game_object", "arguments": {"name": "Cube"}}]},
+            )
+        assert "[1] create_game_object: FAILED — Unknown tool: create_game_object" in result[0].text

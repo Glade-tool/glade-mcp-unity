@@ -6,7 +6,7 @@
   "unity": "2021.3",
   "unityRelease": "0f1",
   "documentationUrl": "https://github.com/Glade-tool/glade-mcp",
-  "changelogUrl": "https://github.com/Glade-tool/glade-mcp/blob/main/CHANGELOG.md",
+  "changelogUrl": "https://github.com/Glade-tool/glade-mcp/blob/main/mcp-server/CHANGELOG.md",
   "licensesUrl": "https://github.com/Glade-tool/glade-mcp/blob/main/LICENSE",
   "keywords": [
     "mcp",

@@ -4,6 +4,17 @@ All notable changes to `gladekit-mcp` are documented here. Format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- **HTTP transport default port is now `8767` (was `8766`).** `8766` is the Godot bridge's port, so `gladekit-mcp --transport http` could not bind while a Godot editor was open. stdio, the default transport, is unaffected. Existing HTTP clients pointing at `http://127.0.0.1:8766/mcp` should update the URL or pass `--port 8766` explicitly.
+- **Meta-tools on Godot.** `batch_execute`, `get_relevant_tools`, `remember_for_session`, and `recall_session_memories` are now exposed in Godot sessions; they were Unity-only. `batch_execute` runs the calls sequentially over the Godot WebSocket bridge and reports per-call results. `get_relevant_tools` groups Godot tools by category with Godot-specific keyword routing, and on the paid tier it is now the way a Godot session reaches the engine-aware knowledge base from an MCP client — the retrieval shipped in 0.7.15 was unreachable there without it. `search_project_scripts` remains Unity-only: the Godot bridge does not yet return script contents in one call.
+
+### Fixed
+
+- **The Godot release zip now carries the license and third-party NOTICE.** `LICENSE` and `NOTICE` (MIT attribution for the `godot-mcp` UID code) now live inside `addons/com.gladekit.mcp-bridge/`, so the packaged addon ships them; previously they sat outside the zipped folder.
+- **Unity package `changelogUrl` pointed at a 404.** It now points at `mcp-server/CHANGELOG.md`, where this file lives.
+- README refreshed against the code: 275 Unity / 115 Godot tools, ~90 core tools, 9 resources; the Godot bridge source path, Architecture, and Contributing now cover both bridges; the comparison table was re-verified against current competitor sources.
+
 ## [0.7.23] - 2026-08-11
 
 ### Added
@@ -50,11 +61,77 @@ All notable changes to `gladekit-mcp` are documented here. Format follows [Keep 
 
 - **Per-client session state is now keyed to the connection rather than the SDK's session object.** Facts stored with `remember_for_session`, along with telemetry and skill calibration, are scoped per connection. SDK 2.x builds a new session object for every request, so the previous key changed mid-conversation and nothing stored was ever recalled. The new key is stable for the life of a connection, distinct between concurrent clients, and no longer derived from an object address — which could be reused after a client disconnected and leak one session's notes into the next.
 
+## [0.7.20] - 2026-07-26
+
+### Added
+
+- **Godot bridge addon v0.7.10 — `check_script_errors`.** GDScript has no build step, but it has a parser and a type analyser, and a script failing either is dead at load time — and nothing reported it: a broken write returned success, `recent_errors` only tracked tool errors, and the editor log stayed empty, so the model only learned something was wrong when the scene refused to start, with no file or line. `check_script_errors` is a read-only tool that runs the engine's own parser (`--headless --check-only`, ~0.2s) and reports each problem with file and line — static type violations and calls to functions that do not exist, not just syntax.
+- **Retrieval at scale for large projects.** Both bridges now emit a per-script mtime during context gather (Unity: ISO-8601 string, Godot: Unix epoch int), so script embeddings are refreshed only for files that changed rather than wholesale each session, and un-narrowable queries ("fix the bug") fall back to a bounded candidate set — recently edited and entry-point/manager scripts — instead of embedding the entire project.
+- **Project-dimension signal.** The Unity context gatherer reports the main camera's projection so a client can infer once per turn whether the project is a 2D or 3D game instead of re-deriving it from whatever scene happens to be open.
+
+### Fixed
+
+- **Godot `modify_script` no longer erases a script and reports success.** The full-rewrite path gated on key *presence* (`args.has("content")`) while Unity gates on the *value*; a model emitting `content: null` therefore wrote an empty file and got `{"success": true, "bytes": 0}` back (reproduced live: 145 chars → 0). `modify_script` and `create_script` now gate on the value, with a final pre-write check that also catches a surgical edit whose `old_string` spans the whole file.
+
+## [0.7.19] - 2026-07-21
+
+### Added
+
+- **`create_top_down_controller` (Unity)** completes the vetted controller trio (3D third-person, 2D side-scroller, 2D top-down). Hand-written top-down controllers reliably ship unnormalized diagonals (~1.41x faster) and a forgotten `gravityScale` (the player slides off-screen); the `TopDownController2D` template fixes both, and `Camera2DFollow` ships by default because a top-down player leaves a static frame in seconds. Atomic scene assembly with deferred wiring, NUnit-tested.
+- **Godot bridge addon v0.7.9 — outline mode on `get_script_content`.** `outline=true` returns `{kind, name, line, signature}` per declaration (`class_name`, inner classes, `func` including static, `signal`, `enum`, `const`, `@export` / `@onready` vars) instead of the file body, so the agent maps a large script cheaply and then reads only the member it needs. Not a mechanical port of the C# brace-depth machine: GDScript is indentation-scoped, so `gdscript_outline.gd` tracks block context by indent.
+
+## [0.7.18] - 2026-07-20
+
+### Added
+
+- **Play-verify heal gate for Unity — runtime parity with Godot's play-verify.** Godot already withheld "done" after a gameplay build until the game ran clean; Unity had only the compile and still-frame gates, so a `NullReferenceException` in `Awake` / `Start` / `Update` compiled fine and shipped silently. `start_playability_probe` / `get_playability_probe_result` now carry the runtime layer: after a gameplay build the loop forces a probe, reads the result, and heals (up to three attempts) or escalates. `ProbeDriver` gained the runtime-error capture this needs.
+
+## [0.7.17] - 2026-07-20
+
+### Security
+
+- **Godot bridge addon v0.7.8 — per-session token authentication (closes a cross-site WebSocket drive-by).** The Godot bridge is a WebSocket server on `127.0.0.1:8766`, and any web page the user visits can open `new WebSocket("ws://127.0.0.1:8766")` and drive every write tool — including `run_project`, which spawns a subprocess. Godot 4's `accept_stream` does not expose the handshake to GDScript, so the bridge can inspect neither `Origin` nor a custom header; the only defense is a secret a browser cannot obtain. On startup the bridge now generates a random token, publishes it to `<home>/.gladekit/godot-bridge-<port>.token` (owner-only on Unix), and refuses every request except `health` that does not echo it. This server reads the file and sends the token automatically. `GLADEKIT_GODOT_NO_AUTH=1` opts out for older clients, logged loudly.
+- **Unity bridge — path-traversal hardening on the raw file-op endpoints.** `/api/turn/revert` and `/api/file/backup` did raw `File.Delete` / `File.Copy` on wire-supplied `filePath` / `backupPath` with no containment check, so an unauthenticated local process could delete or overwrite any file the editor can write. Wire-supplied paths are now resolved and rejected unless they stay inside the project root; `ToolUtils` carries the shared guard and the async tool path gained the same check.
+
+## [0.7.16] - 2026-07-19
+
+### Added
+
+- **Surgical script editing for large existing files (both engines).** `get_script_content` reads a line range (`startLine` / `endLine`, with `totalLines` and a `partial` flag) so the agent can pull one method out of a huge file; `modify_script` gained an anchor-edit mode (`oldString` / `newString`, `replaceAll` — a non-unique anchor is rejected, an empty replacement deletes) alongside the full-file rewrite; and `find_references` keeps scanning past `max_files` so the reported project-wide total is true rather than truncated.
+- **Accurate `find_references` and new `rename_symbol` via a lexical scanner (both engines).** A dependency-free scanner classifies every character as code or comment/string (C#: interpolated-string holes are seen, literal text is not; GDScript: `#` comments and single-, double-, and triple-quoted strings, including multi-line docstrings), so matching and renaming touch whole identifiers in code regions only — searching `Player` never matches `PlayerController`, and `health` never hits `health_max`.
+- **`get_script_content` outline mode (Unity).** `outline=true` returns an ordered list of `{kind, name, line, signature}` for a C# file's types and members, recognised only at type-body brace depth so a call inside a body is never mistaken for a declaration.
+- **`create_save_system` (both engines).** A one-call, vetted save/load system: Unity writes a `SaveSystem` MonoBehaviour persisting a typed key/value store as JSON to `Application.persistentDataPath` (not `PlayerPrefs`); Godot writes a `SaveManager` autoload persisting to `user://`. Both support multiple slots, autosave on quit, tolerate a missing or corrupt file, and reuse rather than clobber an existing script.
+- **`create_platformer_controller` (Unity) and `dimension` on `create_collectible` / `create_hazard`.** The 2D gameplay layer: a Rigidbody2D run-and-jump player (grounded via a feet overlap, rotation frozen, new-Input-System bindings) assembled with sprite, collider, orthographic camera, and optional ground; `dimension: "2d"` builds 2D trigger variants of the collectible and hazard. Errors on a 2D/3D physics mix.
+- **Godot bridge addon v0.7.7** ships the Godot halves above plus `configure_physics_body` (collision layers and masks by layer number, friction and bounce, rigidbody dynamics for an existing body) and `run_gameplay_probe` — a headless playtest that presses InputMap actions on a schedule, tracks the player body, and reports per-step displacement, jump height, and fall detection, answering "does the gameplay work?" where `run_project(verify)` only answers "does it run without errors?".
+
+### Fixed
+
+- **Smithery bundle build on Windows.** `build_smithery_bundle.py` resolves `npx` via `shutil.which` so `CreateProcess` finds `npx.cmd`.
+
 ## [0.7.15] - 2026-07-16
 
 ### Changed
 
 - **Cloud knowledge base retrieval is now engine-aware (paid tier).** When a Godot session queries the curated knowledge base, it retrieves Godot documentation and API references instead of Unity content. The active engine is detected automatically, sent with the query, and the injected context block is labeled for that engine.
+
+## [0.7.14] - 2026-07-15
+
+### Fixed
+
+- **Official MCP Registry namespace casing.** The registry matches the GitHub org namespace case-sensitively and GitHub OIDC grants `io.github.Glade-tool/*`, so `server.json` and the README ownership marker now use `Glade-tool`, not `glade-tool`. PyPI descriptions are immutable per version, so correcting the marker required a release.
+
+## [0.7.13] - 2026-07-15
+
+### Added
+
+- **Listed on the Official MCP Registry and Smithery.** `server.json` describes the package for the registry; `manifest.json` plus `scripts/build_smithery_bundle.py` produce a local MCP Bundle (`.mcpb`) for Smithery. GladeKit is local-first — the server talks to the editor bridge on localhost — so a hosted URL cannot reach a user's editor and the local bundle is the correct distribution.
+- **Unity 2D foundation — physics, tilemap, and parallax tools (258 → 268).** `add_rigidbody_2d` / `set_rigidbody_2d_properties`, `create_collider_2d` / `set_collider_2d_properties` (box, circle, and capsule auto-fit the sprite; polygon traces its outline), `create_physics_material_2d`, `create_tilemap`, `set_tilemap_tiles` (paint, erase, fill), `add_tilemap_collider_2d` (composite seams, one-way platforms), `get_tilemap_info`, and `create_parallax_layer`. The 3D reads fall back to the 2D components, and every 2D tool warns when 2D and 3D physics are mixed on one object — the classic silent 2D failure. Backed by a live-editor smoke suite that found and fixed three bridge bugs before release.
+- **Godot bridge addon v0.7.6** ships `snap_to_ground`, the play-test fix, and `projectName` / `projectPath` on `health` so the desktop app's one-click update can locate the project authoritatively.
+- **Bidirectional Unity bridge ↔ schema parity guard.** A C# tool renamed, removed, or implemented but never registered previously shipped silently dead; the test now parses the sources and fails on any of the three.
+
+### Fixed
+
+- **Kenney `input-prompts` download URL** refreshed after Kenney rotated the media URL (404 → 200), surfaced by the daily catalog-drift check.
 
 ## [0.7.12] - 2026-06-30
 

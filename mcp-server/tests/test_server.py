@@ -33,3 +33,18 @@ async def test_list_tools_returns_expected_count():
         "search_project_scripts",
     ]:
         assert meta in tool_names, f"Meta-tool '{meta}' missing from tool list"
+
+
+@pytest.mark.asyncio
+async def test_godot_list_tools_adds_engine_agnostic_meta_tools(pin_engine_to_godot):
+    """On Godot the whole native catalog is listed plus the four meta-tools
+    that do not depend on the Unity bridge; search_project_scripts is not."""
+    tools = await list_tools()
+    names = {t.name for t in tools}
+
+    assert "get_scene_tree" in names
+    assert "create_game_object" not in names, "Unity tool leaked into the Godot list"
+    for meta in ("get_relevant_tools", "remember_for_session", "recall_session_memories", "batch_execute"):
+        assert meta in names, f"{meta} missing from the Godot tool list"
+    assert "search_project_scripts" not in names
+    assert len(tools) <= 128, "Godot list must stay under Claude Code's practical tool limit"

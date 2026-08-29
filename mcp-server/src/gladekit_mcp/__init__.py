@@ -9,7 +9,10 @@ except PackageNotFoundError:
 
 
 DEFAULT_HTTP_HOST = "127.0.0.1"
-DEFAULT_HTTP_PORT = 8766
+# 8765 is the Unity bridge and 8766 the Godot bridge, so the optional HTTP
+# transport takes the next port up. It used to default to 8766 and could not
+# bind while a Godot editor was open.
+DEFAULT_HTTP_PORT = 8767
 DEFAULT_HTTP_PATH = "/mcp"
 
 

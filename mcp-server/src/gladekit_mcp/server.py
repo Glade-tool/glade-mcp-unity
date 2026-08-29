@@ -34,7 +34,13 @@ from . import (
 )
 from .prompts import build_prompt_from_bridge
 from .sdk_compat import create_server, current_session_key, optional_kwargs
-from .tools.registry import dispatch_tool_call, get_active_engine, get_mcp_tools_async, sanitize_args
+from .tools.registry import (
+    dispatch_batch_godot,
+    dispatch_tool_call,
+    get_active_engine,
+    get_mcp_tools_async,
+    sanitize_args,
+)
 from .tools.task_filter import get_relevant_tool_summary
 
 logger = logging.getLogger("gladekit-mcp")
@@ -54,7 +60,8 @@ _INSTRUCTIONS = (
     "beyond the core set.\n\n"
     "On Godot: call get_project_info first for a single-call snapshot of the project "
     "(engine version, renderer, current scene, enabled addons, input map) so you do "
-    "not burn calls on cold-start exploration."
+    "not burn calls on cold-start exploration. batch_execute, get_relevant_tools and "
+    "the session-memory tools work on Godot too."
 )
 
 # ── In-session memory ─────────────────────────────────────────────────────────
@@ -81,11 +88,11 @@ _META_TOOLS = [
     types.Tool(
         name="get_relevant_tools",
         description=(
-            "Given a Unity task description, returns the most relevant tools "
-            "for that task — including extended tools beyond the core listed set. "
+            "Given a task description, returns the most relevant tools for that "
+            "task — on Unity including extended tools beyond the core listed set. "
             "Call this before starting specialized work (animator blend trees, "
-            "navmesh, IK, terrain, particle systems, cinemachine, etc.) to "
-            "discover the right tool names. Extended tools are callable even "
+            "navmesh, IK, terrain, particle systems, cinemachine, signals, export, etc.) "
+            "to discover the right tool names. Extended Unity tools are callable even "
             "though they don't appear in the tool list."
         ),
         inputSchema={
@@ -132,10 +139,10 @@ _META_TOOLS = [
     types.Tool(
         name="batch_execute",
         description=(
-            "Execute multiple tool calls in a single request to Unity. "
+            "Execute multiple tool calls in a single request to the editor. "
             "Reduces round-trip overhead for multi-step operations like "
             "create object → set transform → add component → create material → assign material. "
-            "Each call runs sequentially on the Unity main thread. "
+            "Each call runs sequentially on the editor main thread. "
             "Returns per-call results with individual success/failure status — "
             "partial failures do not abort the batch."
         ),
@@ -191,6 +198,14 @@ _META_TOOLS = [
     ),
 ]
 
+# Meta-tools that do not depend on the Unity bridge's surface. Session memory
+# is server-side; batch_execute has a sequential Godot path
+# (registry.dispatch_batch_godot); get_relevant_tools has a Godot keyword map.
+# search_project_scripts stays Unity-only: it needs every script's contents
+# in one gather, which the Godot bridge does not return.
+_GODOT_META_TOOL_NAMES = {"get_relevant_tools", "remember_for_session", "recall_session_memories", "batch_execute"}
+_GODOT_META_TOOLS = [t for t in _META_TOOLS if t.name in _GODOT_META_TOOL_NAMES]
+
 
 # ── Tool handlers ─────────────────────────────────────────────────────────────
 
@@ -200,14 +215,13 @@ async def list_tools() -> list[types.Tool]:
 
     Probes for the active bridge kind on first call (cached for the
     lifetime of the process) and returns Unity or Godot schemas
-    accordingly. Meta-tools are Unity-specific today — get_relevant_tools,
-    remember_for_session, batch_execute, search_project_scripts all
-    assume the Unity bridge's tool surface and context-gather endpoint.
-    On Godot we expose just the 63 native tools.
+    accordingly. Godot gets its whole native catalog (it fits under Claude
+    Code's tool limit, so no core filtering) plus the engine-agnostic
+    meta-tools; search_project_scripts is Unity-only.
     """
     engine_tools = await get_mcp_tools_async()
     if get_active_engine() == "godot":
-        return engine_tools
+        return engine_tools + _GODOT_META_TOOLS
     return engine_tools + _META_TOOLS
 
 
@@ -260,14 +274,14 @@ async def _handle_tool_call(
                 except bridge.UnityBridgeError:
                     project_path = None
                 skill.maybe_persist(project_path, session_id=sid)
-        result = get_relevant_tool_summary(message)
+        engine = get_active_engine()
+        if engine not in ("unity", "godot"):
+            engine = "unity"
+        result = get_relevant_tool_summary(message, engine=engine)
 
         # Inject RAG context from cloud knowledge base (paid tier), scoped to
         # the active engine so a Godot session pulls Godot knowledge.
         if message and cloud.is_available():
-            engine = get_active_engine()
-            if engine not in ("unity", "godot"):
-                engine = "unity"
             rag_context = await cloud.fetch_rag_context(message, engine=engine)
             if rag_context:
                 result += f"\n\n## {engine.capitalize()} Knowledge Base\n\n{rag_context}"
@@ -329,7 +343,19 @@ async def _handle_tool_call(
         telemetry.record_batch_execute(_current_session_id(), sanitized_calls)
 
         try:
-            results = await bridge.execute_batch(sanitized_calls)
+            engine = get_active_engine()
+            if engine == "unknown":
+                await get_mcp_tools_async()
+                engine = get_active_engine()
+            if engine == "godot":
+                # The Godot bridge takes native JSON types, so dispatch the
+                # calls as given: sanitize_args stringifies numbers for the
+                # Unity AI Gateway and would corrupt vectors and counts.
+                results = await dispatch_batch_godot(
+                    [{"toolName": c.get("toolName", ""), "arguments": c.get("arguments") or {}} for c in calls]
+                )
+            else:
+                results = await bridge.execute_batch(sanitized_calls)
         except Exception as exc:
             return [types.TextContent(type="text", text=f"Batch execution error: {exc}")]
 

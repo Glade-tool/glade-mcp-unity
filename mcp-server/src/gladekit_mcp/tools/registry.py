@@ -485,6 +485,34 @@ async def _dispatch_unity(name: str, arguments: dict[str, Any]) -> str:
         )
 
 
+async def dispatch_batch_godot(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Run a batch sequentially over the Godot WS bridge.
+
+    The Godot bridge has no batch endpoint (Unity's ``/api/batch`` is what
+    ``bridge.execute_batch`` talks to), and its dispatch is serialized on the
+    editor main thread anyway, so a server-side loop costs one WS round-trip
+    per call and nothing else. Results use the Unity batch's per-call shape —
+    ``{toolName, success, result | error}`` — so the meta-tool's formatting is
+    engine-agnostic. A failing call does not abort the batch.
+    """
+    results: list[dict[str, Any]] = []
+    for call in calls:
+        name = call.get("toolName", "")
+        raw = await _dispatch_godot(name, call.get("arguments") or {})
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            payload = {"success": False, "message": raw}
+        if isinstance(payload, dict) and payload.get("success"):
+            results.append({"toolName": name, "success": True, "result": raw})
+        else:
+            error = ""
+            if isinstance(payload, dict):
+                error = payload.get("error") or payload.get("message") or ""
+            results.append({"toolName": name, "success": False, "error": error or "Unknown error"})
+    return results
+
+
 async def _dispatch_godot(name: str, arguments: dict[str, Any]) -> str:
     """Dispatch path for the Godot WS bridge. Simpler than Unity — no
     asset-pipeline special cases, no compilation wait, no Unity-specific

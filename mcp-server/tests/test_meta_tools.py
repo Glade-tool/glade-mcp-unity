@@ -67,6 +67,14 @@ class TestGetRelevantTools:
         text = result[0].text
         assert "all" in text.lower() or "All" in text
 
+    @pytest.mark.asyncio
+    async def test_godot_session_gets_godot_tools(self, pin_engine_to_godot):
+        result = await call_tool("get_relevant_tools", {"message": "connect the timeout signal to the player"})
+        text = result[0].text
+        assert "connect_signal" in text
+        assert "signal" in text.split("\n")[0]
+        assert "add_component" not in text, "Unity tool surfaced in a Godot session"
+
 
 # ── Resources ────────────────────────────────────────────────────────────────
 

@@ -4,7 +4,7 @@ extends "res://addons/com.gladekit.mcp-bridge/tools/i_tool.gd"
 # went stale after manual file moves outside the editor.
 #
 # Version-gated: Godot 4.4+. Adapted (with MIT attribution, see
-# godot-bridge/NOTICE) from godot-mcp's resave_resources op at
+# addons/com.gladekit.mcp-bridge/NOTICE) from godot-mcp's resave_resources op at
 # src/scripts/godot_operations.gd:889-1090. Their version pre-debugged
 # the resave-after-uid-change flow (their issues #102, #104).
 #

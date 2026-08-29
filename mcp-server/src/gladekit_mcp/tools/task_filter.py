@@ -23,6 +23,7 @@ Design:
 import re
 from typing import Dict, List, Set
 
+from ..schemas.godot import ALL_CATEGORIES as _GODOT_CATEGORIES
 from . import get_tools_for_categories, get_unity_tool_schemas
 
 ALWAYS_INCLUDED: Set[str] = {"core", "scene", "scripting"}
@@ -194,23 +195,27 @@ _COMPILED_KEYWORDS: Dict[str, List[re.Pattern]] = {
 }
 
 
-def categorize_message(message: str) -> Set[str]:
-    """
-    Return category names relevant to the user's message.
-
-    Returns empty set if nothing matches (caller should use all tools / fail-open).
-    Does NOT include ALWAYS_INCLUDED — caller decides whether to add those.
-    """
+def _match_categories(message: str, compiled: Dict[str, List[re.Pattern]]) -> Set[str]:
     if not message or not message.strip():
         return set()
 
     matched: Set[str] = set()
-    for cat, patterns in _COMPILED_KEYWORDS.items():
+    for cat, patterns in compiled.items():
         for pattern in patterns:
             if pattern.search(message):
                 matched.add(cat)
                 break
     return matched
+
+
+def categorize_message(message: str) -> Set[str]:
+    """
+    Return Unity category names relevant to the user's message.
+
+    Returns empty set if nothing matches (caller should use all tools / fail-open).
+    Does NOT include ALWAYS_INCLUDED — caller decides whether to add those.
+    """
+    return _match_categories(message, _COMPILED_KEYWORDS)
 
 
 def get_tools_for_request(message: str) -> List[Dict]:
@@ -226,23 +231,29 @@ def get_tools_for_request(message: str) -> List[Dict]:
     return get_tools_for_categories(matched)
 
 
-def get_relevant_tool_summary(message: str) -> str:
+def get_relevant_tool_summary(message: str, engine: str = "unity") -> str:
     """
     Return a formatted summary of relevant tools for the given message.
 
-    Used by the get_relevant_tools MCP meta-tool.
+    Used by the get_relevant_tools MCP meta-tool. `engine` selects the
+    catalog and keyword map: "unity" (default) or "godot".
     """
-    matched = categorize_message(message)
+    if engine == "godot":
+        matched = categorize_message_godot(message)
+        all_tools = get_godot_tool_schemas()
+        active = matched | GODOT_ALWAYS_INCLUDED
+        tools = get_godot_tools_for_categories(matched)
+    else:
+        matched = categorize_message(message)
+        all_tools = get_unity_tool_schemas()
+        active = matched | ALWAYS_INCLUDED
+        tools = get_tools_for_categories(matched)
 
     if not matched:
-        all_tools = get_unity_tool_schemas()
         return (
             f"All {len(all_tools)} tools are potentially relevant for this request. "
             "No specific category detected — all tools are available."
         )
-
-    active = matched | ALWAYS_INCLUDED
-    tools = get_tools_for_categories(matched)
 
     lines = [f"Categories: {', '.join(sorted(active))} ({len(tools)} tools)\n"]
     for tool in tools:
@@ -255,3 +266,123 @@ def get_relevant_tool_summary(message: str) -> str:
         lines.append(f"- {name}: {desc}")
 
     return "\n".join(lines)
+
+
+# ── Godot ─────────────────────────────────────────────────────────────────────
+# The Godot bridge exposes its whole catalog (no CORE_TOOLS filter), so on
+# Godot the meta-tool is about grouping the catalog for a task and carrying
+# the RAG context, not discovery. Categories follow schemas/godot/ALL_CATEGORIES
+# (the bridge's own directory layout). The keyword map reuses the Unity
+# patterns where the vocabulary is shared and adds Godot's own — signals,
+# autoloads, exports, UIDs — and merges categories Godot groups differently
+# (camera + light + WorldEnvironment are one category there).
+
+GODOT_ALWAYS_INCLUDED: Set[str] = {"scene", "script", "scene_io"}
+
+_GODOT_CATEGORY_KEYWORDS: Dict[str, List[str]] = {
+    "camera": _CATEGORY_KEYWORDS["camera"]
+    + _CATEGORY_KEYWORDS["lighting"]
+    + [r"\bworld ?environment\b", r"\bfog\b", r"\bglow\b", r"\bsky\b", r"\btonemap"],
+    "resource": _CATEGORY_KEYWORDS["materials"]
+    + [r"\bresources?\b", r"\b\.tres\b", r"\bmesh\b", r"\bshape\b", r"\bgradient\b", r"\bcurve\b"],
+    "physics": _CATEGORY_KEYWORDS["physics"]
+    + [
+        r"\bcollision (layer|mask)s?\b",
+        r"\bfriction\b",
+        r"\bbounce\b",
+        r"\bshape ?cast\b",
+        r"\b(character|rigid|static|animatable) ?body",
+    ],
+    "particles": [
+        r"\bparticle",
+        r"\bvfx\b",
+        r"\beffects?\b",
+        r"\bexplosion\b",
+        r"\bsparkle\b",
+        r"\bsmoke\b",
+        r"\bfire\b",
+        r"\btrail\b",
+    ],
+    "audio": [r"\baudio\b", r"\bsounds?\b", r"\bmusic\b", r"\bsfx\b", r"\bvolume\b", r"\bstream ?player\b"],
+    "animation": _CATEGORY_KEYWORDS["animation"]
+    + [r"\banimation ?tree\b", r"\bblend ?space\b", r"\banimation ?player\b", r"\btrack\b"],
+    "ui": _CATEGORY_KEYWORDS["ui"]
+    + [
+        r"\bcontrol\b",
+        r"\blabel\b",
+        r"\btheme\b",
+        r"\banchors?\b",
+        r"\bprogress ?bar\b",
+        r"\bhealth bar\b",
+        r"\bpause menu\b",
+        r"\bmain menu\b",
+    ],
+    "signal": [r"\bsignals?\b", r"\bconnect\b", r"\bdisconnect\b", r"\bemit", r"\bcallbacks?\b"],
+    "project": _CATEGORY_KEYWORDS["input_system"]
+    + [
+        r"\bproject (info|settings)\b",
+        r"\baddons?\b",
+        r"\bautoload\b",
+        r"\bsingleton\b",
+        r"\brenderer\b",
+        r"\bsession summary\b",
+        r"\bwhat did you\b",
+        r"\blist (the )?assets\b",
+    ],
+    "navigation": _CATEGORY_KEYWORDS["terrain_nav"] + [r"\bnav ?mesh\b", r"\bnavigation ?(agent|region)\b", r"\bpursu"],
+    "runtime": _CATEGORY_KEYWORDS["runtime"]
+    + [
+        r"\brun (the )?(game|project|scene)\b",
+        r"\bplay ?test",
+        r"\bprobe\b",
+        r"\bconsole\b",
+        r"\berrors?\b",
+        r"\bdebug output\b",
+        r"\bscreenshot\b",
+        r"\blook at\b",
+        r"\bgame view\b",
+        r"\bselection\b",
+        r"\bstop (the )?(game|project)\b",
+    ],
+    "export": [
+        r"\bexport",
+        r"\bbuild (the |a |an )?(game|project|executable|binary|for)\b",
+        r"\bship\b",
+        r"\brelease build\b",
+        r"\bweb build\b",
+        r"\bitch\.io\b",
+        r"\bexecutable\b",
+    ],
+    "uid": [r"\buids?\b", r"\bresource ?uid\b", r"\b\.uid\b"],
+    "asset_pipeline": [
+        r"\bkenney\b",
+        r"\bfree assets?\b",
+        r"\bimport (an? |some )?assets?\b",
+        r"\bcc0\b",
+        r"\bdownload\b",
+        r"\battribution\b",
+        r"\blicen[cs]e",
+        r"\basset packs?\b",
+        r"\bplaceholder (art|sprites?|assets?)\b",
+    ],
+}
+
+_GODOT_COMPILED_KEYWORDS: Dict[str, List[re.Pattern]] = {
+    cat: [re.compile(p, re.IGNORECASE) for p in patterns] for cat, patterns in _GODOT_CATEGORY_KEYWORDS.items()
+}
+
+
+def categorize_message_godot(message: str) -> Set[str]:
+    """Godot counterpart of `categorize_message` (fail-open: empty set on no match)."""
+    return _match_categories(message, _GODOT_COMPILED_KEYWORDS)
+
+
+def get_godot_tool_schemas() -> List[Dict]:
+    """Every Godot tool schema, in catalog order."""
+    return [tool for _, tools in _GODOT_CATEGORIES for tool in tools]
+
+
+def get_godot_tools_for_categories(category_names: Set[str]) -> List[Dict]:
+    """Godot tools for the given categories + GODOT_ALWAYS_INCLUDED."""
+    active = category_names | GODOT_ALWAYS_INCLUDED
+    return [tool for cat, tools in _GODOT_CATEGORIES if cat in active for tool in tools]

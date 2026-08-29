@@ -443,7 +443,7 @@ static func _camel_to_snake(s: String) -> String:
 # ── Class instantiation (safe, supports user class_names) ──────────────────
 #
 # Adapted from godot-mcp src/scripts/godot_operations.gd:95-162 (MIT, see
-# godot-bridge/NOTICE). Two-step resolution:
+# addons/com.gladekit.mcp-bridge/NOTICE). Two-step resolution:
 #   1. Strict regex against agent-supplied class name to prevent injection
 #      through `ClassDB.instantiate(<arbitrary>)`.
 #   2. Try ClassDB first (built-in types: CharacterBody3D, Sprite2D, ...).

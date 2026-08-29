@@ -5,7 +5,7 @@ scene, node, script, and resource tools so AI assistants can read and modify
 the active project. Designed to be addressed by an MCP server (for use with
 Cursor, Claude Code, Windsurf, and similar) or by the GladeKit desktop app.
 
-**Status:** 60 tools registered across 12 categories (v0.6.4: context-engineering polish on `get_script_content` + `get_scene_tree`; no new tools).
+**Status:** 115 tools registered across 17 categories (v0.7.13). This directory is a minimal Godot project wrapping the addon (`addons/com.gladekit.mcp-bridge/`) plus its GUT tests; only the addon folder ships in the release zip. Per-version detail lives in the [MCP server CHANGELOG](../mcp-server/CHANGELOG.md).
 
 | Phase | Tools | Cumulative | Status |
 | --- | --- | --- | --- |
@@ -25,6 +25,7 @@ Cursor, Claude Code, Windsurf, and similar) or by the GladeKit desktop app.
 | 15 | Parser catches Godot 4 `USER ERROR:` prefix (was matching Godot 3's `USER SCRIPT ERROR:` only, silently dropping every `push_error` event); `get_runtime_events` adds `raw_stderr_bytes` + `raw_stderr_tail` self-diagnosis fields so an empty response distinguishes "parser missed a prefix" from "subprocess wrote nothing" | 53 | shipped (v0.5.6) |
 | 16 | `get_runtime_events` message field surfaces the byte-count diagnostic inline so it can't be missed by models that only quote `message` back | 53 | shipped (v0.5.7) |
 | 17 | Context-engineering polish: `get_script_content` is now paginated by line (default 500-line cap, `total_lines` + `truncated` echoed so the agent can request the next slice); `get_scene_tree` gains `response_format` (`"both"` default, `"tree_text_only"` halves payload, `"tree_only"` for programmatic callers) | 60 | shipped (v0.6.4) |
+| 18 | + 55 tools across v0.7.0–v0.7.13: first-class 2D (sprites, animated sprites, tilemaps, parallax, 2D physics bodies), vetted one-call scaffolders (`create_2d_controller`, `create_third_person_controller`, enemies, `create_projectile` / `create_health` / `create_health_bar`, `create_game_manager`, collectibles, hazards, `create_main_menu` / `create_pause_menu`, `create_moving_platform`, `create_save_system`, `create_scene_transition`, `create_juice`, `create_screen_shake`), AnimationTree state machines + blend spaces, audio players, particles, 3D navigation, edit-time spatial queries (`raycast`, `overlap_shape`, `shape_cast`), `arrange_nodes` / `set_node_transform_batch` / `snap_to_ground`, `look_at_game_view`, outline-mode script reads + `find_references` / `rename_symbol`, `run_gameplay_probe` + `run_project` verify mode, asset pipeline, export tools, `get_session_summary`; per-session token auth and a main-thread stall watchdog | 115 | shipped (v0.7.13) |
 
 ### New in Phase 3
 
@@ -34,7 +35,7 @@ Cursor, Claude Code, Windsurf, and similar) or by the GladeKit desktop app.
   competitor (godot-mcp), which can't run a play session and keep an
   editor alive — they have to relaunch Godot per tool call.
 - **Godot 4.4+ UID handling** — `get_uid` and `update_project_uids`
-  (port from godot-mcp with MIT attribution, see [NOTICE](../NOTICE)).
+  (port from godot-mcp with MIT attribution, see [NOTICE](addons/com.gladekit.mcp-bridge/NOTICE)).
   Version-gated; older engines see a structured "requires Godot 4.4+"
   error.
 - **Service layer** — read-only mode (`GLADEKIT_GODOT_READ_ONLY=1`),
@@ -141,20 +142,36 @@ Either way:
 3. Enable **GladeKit MCP Bridge**.
 4. Confirm the bridge is up: the editor Output panel should print
    ```
-   [GladeKit MCP Bridge] listening on ws://127.0.0.1:8766  (v0.6.4, 60 tools registered, thread-polled at 200Hz)
+   [GladeKit MCP Bridge] listening on ws://127.0.0.1:8766  (v0.7.13, 115 tools registered, thread-polled at 200Hz)
    ```
 
 The server stops automatically when you disable the plugin or close Godot.
 
 ## Configuration
 
+All variables are read by the bridge, so set them in your shell *before*
+launching Godot.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `GLADEKIT_GODOT_BRIDGE_PORT` | `8766` | Override the listen port if 8766 is taken. Set in your shell *before* launching Godot. |
+| `GLADEKIT_GODOT_BRIDGE_PORT` | `8766` | Override the listen port if 8766 is taken. |
+| `GLADEKIT_GODOT_READ_ONLY` | unset | Set to `1` to refuse every mutating tool for this session (audits, reviews, demos). Persistent per-project equivalent: `gladekit/read_only_mode` in Project Settings. |
+| `GLADEKIT_GODOT_NO_AUTH` | unset | Set to `1` to disable per-session token auth (only for clients that cannot send the token yet; logged loudly at startup). |
 
 If the bridge fails to bind (port already in use, etc.) it prints a clear
 error to the editor's Errors panel and to stdout with the env-var override
 instructions.
+
+### Authentication
+
+Any web page can open `ws://127.0.0.1:8766` from the browser, and Godot's
+`WebSocketPeer` does not expose the handshake's `Origin` header, so the bridge
+cannot rely on browser defenses. Instead it generates a random token at startup,
+writes it to `<home>/.gladekit/godot-bridge-<port>.token` (readable only by the
+current OS user), and requires that token in the JSON body of every request
+except `health`. A browser cannot read a local file, so its requests are
+refused; the MCP server, the desktop app, and the eval harness read the file
+and send the token automatically. Same model as Jupyter and VS Code.
 
 ## Wire protocol
 
@@ -179,6 +196,8 @@ inside the message).
 - `toolName` — required for `tools/execute`.
 - `arguments` — optional. Accepts either a JSON object (recommended) or a
   JSON-encoded string (matches the Unity bridge wire shape).
+- `token` — required on every endpoint except `health` (see
+  [Authentication](#authentication)).
 
 ### Response
 

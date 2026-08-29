@@ -50,7 +50,7 @@ def test_build_http_app_loopback_enables_dns_rebinding_protection():
     """Binding to 127.0.0.1 turns DNS-rebinding protection ON."""
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager  # noqa: F401
 
-    app = build_http_app(host="127.0.0.1", port=8766)
+    app = build_http_app(host="127.0.0.1", port=8767)
     # Access the session manager via the app's lifespan closure — the
     # settings are an implementation detail, so we assert via a constructed
     # instance directly to verify the loopback heuristic.
@@ -62,11 +62,11 @@ def test_build_http_app_loopback_enables_dns_rebinding_protection():
     # Re-run the same branch our builder runs so we can introspect settings.
     settings = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
-        allowed_hosts=["127.0.0.1:8766", "localhost:8766"],
-        allowed_origins=["http://127.0.0.1:8766", "http://localhost:8766"],
+        allowed_hosts=["127.0.0.1:8767", "localhost:8767"],
+        allowed_origins=["http://127.0.0.1:8767", "http://localhost:8767"],
     )
     assert settings.enable_dns_rebinding_protection is True
-    assert "127.0.0.1:8766" in settings.allowed_hosts
+    assert "127.0.0.1:8767" in settings.allowed_hosts
     # App should have constructed without error for the loopback path.
     assert app is not None
 

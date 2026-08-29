@@ -7,7 +7,7 @@ extends "res://addons/com.gladekit.mcp-bridge/tools/i_tool.gd"
 #
 # Read-only. Version-gated: requires Godot 4.4+.
 #
-# Adapted (with MIT attribution, see godot-bridge/NOTICE) from godot-mcp's
+# Adapted (with MIT attribution, see addons/com.gladekit.mcp-bridge/NOTICE) from godot-mcp's
 # get_uid op at src/scripts/godot_operations.gd:889+. Their version
 # already debugged several 4.4 edge cases — we mirror the safe path.
 #

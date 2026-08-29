@@ -92,6 +92,34 @@ def reset_shared_http_clients():
     search._openai_client = None
 
 
+def _pin_engine(engine: str):
+    """Set the cached engine kind on the registry (and any stale copies) for
+    the duration of a test, then restore it. See pin_engine_to_unity."""
+    import sys
+
+    from gladekit_mcp.tools import registry as registry_mod
+
+    prev = registry_mod._active_engine
+    registry_mod._active_engine = engine
+
+    # Patch any stale registry module accessible via server.py function refs.
+    stale_modules = []
+    srv = sys.modules.get("gladekit_mcp.server")
+    if srv is not None:
+        for attr_name in ("dispatch_tool_call", "get_active_engine", "get_mcp_tools_async"):
+            fn = getattr(srv, attr_name, None)
+            globs = getattr(fn, "__globals__", None)
+            if globs is not None and "_active_engine" in globs and globs is not registry_mod.__dict__:
+                stale_modules.append((globs, globs["_active_engine"]))
+                globs["_active_engine"] = engine
+
+    yield
+
+    registry_mod._active_engine = prev
+    for globs, prior in stale_modules:
+        globs["_active_engine"] = prior
+
+
 @pytest.fixture(autouse=True)
 def pin_engine_to_unity():
     """Pin the engine probe cache to "unity" for every test.
@@ -113,26 +141,15 @@ def pin_engine_to_unity():
     module — and its `_active_engine` global lives there, not on the
     newly-imported registry.
     """
-    import sys
+    yield from _pin_engine("unity")
 
-    from gladekit_mcp.tools import registry as registry_mod
 
-    prev = registry_mod._active_engine
-    registry_mod._active_engine = "unity"
+@pytest.fixture
+def pin_engine_to_godot():
+    """Opt-in: route the test through the Godot tool list and dispatch path.
 
-    # Patch any stale registry module accessible via server.py function refs.
-    stale_modules = []
-    srv = sys.modules.get("gladekit_mcp.server")
-    if srv is not None:
-        for attr_name in ("dispatch_tool_call", "get_active_engine", "get_mcp_tools_async"):
-            fn = getattr(srv, attr_name, None)
-            globs = getattr(fn, "__globals__", None)
-            if globs is not None and "_active_engine" in globs and globs is not registry_mod.__dict__:
-                stale_modules.append((globs, globs["_active_engine"]))
-                globs["_active_engine"] = "unity"
-
-    yield
-
-    registry_mod._active_engine = prev
-    for globs, prior in stale_modules:
-        globs["_active_engine"] = prior
+    Runs after the autouse Unity pin (explicit fixtures resolve later), so
+    the test sees "godot" and teardown hands back "unity" before the autouse
+    fixture restores whatever preceded it.
+    """
+    yield from _pin_engine("godot")
