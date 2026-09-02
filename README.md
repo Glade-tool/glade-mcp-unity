@@ -1,4 +1,4 @@
-# Glade MCP - Connect your AI client directly to Unity or Godot
+# Glade MCP 
 
 Connect Cursor, Claude Code, Windsurf, Claude Desktop, and other AI clients directly to your Unity or Godot editor.
 
@@ -18,7 +18,7 @@ The MCP server auto-detects which editor is running (Unity on `:8765`, Godot on 
 
 ### 1. Install the editor bridge
 
-GladeKit MCP supports both Unity and Godot. Both bridges live in this repo: [`unity-bridge/`](https://github.com/Glade-tool/glade-mcp/tree/main/unity-bridge) is a UPM package, [`godot-bridge/`](https://github.com/Glade-tool/glade-mcp/tree/main/godot-bridge) wraps the editor addon at `godot-bridge/addons/com.gladekit.mcp-bridge/`. Install the one for your engine.
+Glade MCP supports both Unity and Godot. Both bridges live in this repo: [`unity-bridge/`](https://github.com/Glade-tool/glade-mcp/tree/main/unity-bridge) is a UPM package, [`godot-bridge/`](https://github.com/Glade-tool/glade-mcp/tree/main/godot-bridge) wraps the editor addon at `godot-bridge/addons/com.gladekit.mcp-bridge/`. Install the one for your engine.
 
 <details>
 <summary><strong>Unity (2021.3+)</strong></summary>
