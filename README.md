@@ -1,4 +1,4 @@
-# GladeKit MCP
+# Glade MCP - Connect your AI client directly to Unity or Godot
 
 Connect Cursor, Claude Code, Windsurf, Claude Desktop, and other AI clients directly to your Unity or Godot editor.
 
